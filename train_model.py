@@ -49,7 +49,7 @@ def dl():
     load_dotenv(find_dotenv())
     import sys
 
-    sys.path.append(os.getenv("DM_ROOTDIR"))
+    sys.path.append(output_root)
     pass
 
 
@@ -447,13 +447,13 @@ def train_and_test_model(Data, Craters, MP, i_MP):
     # n_samples = MP['n_train']
     now = time.strftime("%c")
     n_samples = 1000
-    save_folder = os.path.join(os.getenv("DM_ROOTDIR"), "YNET/models", now)
+    save_folder = os.path.join(output_root, "YNET/models", now)
     os.mkdir(save_folder)
     save_name = save_folder + "/{epoch:02d}-{val_loss:.2f}.hdf5"
-    save_model = ModelCheckpoint(os.path.join(os.getenv("DM_ROOTDIR"), save_name))
+    save_model = ModelCheckpoint(os.path.join(output_root, save_name))
     # early_stopping = EarlyStopping(monitor='val_loss', patience=5, verbose=1)
     tensorboard = TensorBoard(
-        log_dir=os.path.join(os.getenv("DM_ROOTDIR"), "YNET/logs", now),
+        log_dir=os.path.join(output_root, "YNET/logs", now),
         histogram_freq=1,
         batch_size=bs,
         write_graph=True,
@@ -619,7 +619,7 @@ def train_model(test, test_dataset, model):
     MP = {}
 
     # Directory of train/dev/test image and crater hdf5 files.
-    MP["dir"] = os.path.join(os.getenv("DM_ROOTDIR"), "data/processed/")
+    MP["dir"] = os.path.join(output_root, "data/processed/")
 
     # Image width/height, assuming square images.
     MP["dim"] = 256
