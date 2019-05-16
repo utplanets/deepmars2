@@ -9,23 +9,30 @@ from sklearn.preprocessing import MinMaxScaler
 from ..config import input_root, output_root
 
 
-def get_DEM():
+def get_DEM(filename):
+    """Reads the DEM from a large tiff file.
 
-    filename = input_root + "/data/raw/Mars_HRSC_MOLA_BlendDEM_Global_200mp_v2.tif"
+    Paramters
+    ----------
+    filename : str, optional
+        path of the DEM file, default to environment variable DM_MarsDEM
+
+    Returns
+    --------
+    dem : numpy.ndarray
+        The image as a numpy array.
+    """
 
     return tifffile.imread(filename)
 
 
-def get_IR():
-
-    filename = input_root + "/data/raw/Mars_THEMIS_scaled.tif"
+def get_IR(filename):
 
     return tifffile.imread(filename)
 
 
-def get_craters():
+def get_craters(filename):
 
-    filename = input_root + "/data/raw/RobbinsCraters_20121016.tsv"
     craters = pd.read_csv(filename, sep="\t", engine="python")
     keep_columns = [
         "LATITUDE_CIRCLE_IMAGE",
@@ -203,3 +210,33 @@ def gen_dataset(
 
     imgs_h5.close()
     craters_h5.close()
+
+
+_dem_filename = input_root + "/data/raw/Mars_HRSC_MOLA_BlendDEM_Global_200mp_v2.tif"
+_ir_filename = input_root + "/data/raw/Mars_THEMIS_scaled.tif"
+_crater_filename = input_root + "/data/raw/RobbinsCraters_20121016.tsv"
+
+
+def main(
+    dem_filename=_dem_filename,
+    ir_filename=_ir_filename,
+    crater_filename=_crater_filename,
+):
+
+    print("Loading DEM")
+    DEM = get_DEM(dem_filename)
+    print("Loading IR")
+    IR = get_IR(ir_filename)
+    print("Loading craters")
+    craters = get_craters(crater_filename)
+
+    print("Generating dataset", flush=True)
+
+    for i in range(50):
+        start_index = i * 1000
+        print("\n{:05d}".format(start_index), flush=True)
+        gen_dataset(DEM, IR, craters, "ran", amount=1000, start_index=start_index)
+
+
+if __name__=="__main__":
+    main()
