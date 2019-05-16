@@ -5,3 +5,7 @@ longlat_thresh2_ = 1.8
 rad_thresh_ = 1.0
 template_thresh_ = 0.5
 target_thresh_ = 0.1
+
+
+input_root = "/disks/work/james/deepmars"
+output_root = "/disks/work/james/deepmars"

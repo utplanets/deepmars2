@@ -6,27 +6,26 @@ import h5py
 import cv2
 from tqdm import tqdm
 from sklearn.preprocessing import MinMaxScaler
-
-root = "/disks/work/james/deepmars"
+from ..config import input_root, output_root
 
 
 def get_DEM():
 
-    filename = root + "/data/raw/Mars_HRSC_MOLA_BlendDEM_Global_200mp_v2.tif"
+    filename = input_root + "/data/raw/Mars_HRSC_MOLA_BlendDEM_Global_200mp_v2.tif"
 
     return tifffile.imread(filename)
 
 
 def get_IR():
 
-    filename = root + "/data/raw/Mars_THEMIS_scaled.tif"
+    filename = input_root + "/data/raw/Mars_THEMIS_scaled.tif"
 
     return tifffile.imread(filename)
 
 
 def get_craters():
 
-    filename = root + "/data/raw/RobbinsCraters_20121016.tsv"
+    filename = input_root + "/data/raw/RobbinsCraters_20121016.tsv"
     craters = pd.read_csv(filename, sep="\t", engine="python")
     keep_columns = [
         "LATITUDE_CIRCLE_IMAGE",
@@ -145,7 +144,7 @@ def gen_dataset(
 
     imgs_h5 = h5py.File(
         ("{}/data/processed/{}_images_{:05d}.hdf5").format(
-            root, series_prefix, start_index
+            output_root, series_prefix, start_index
         ),
         "w",
     )
@@ -167,7 +166,7 @@ def gen_dataset(
     imgs_h5_box_size.attrs["definition"] = "Box size"
     craters_h5 = pd.HDFStore(
         ("{}/data/processed/{}_craters_{:05d}.hdf5").format(
-            root, series_prefix, start_index
+            output_root, series_prefix, start_index
         )
     )
 
