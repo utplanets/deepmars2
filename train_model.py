@@ -34,22 +34,6 @@ config.log_device_placement = True
 sess = tf.Session(config=config)
 set_session(sess)
 
-#previous tuned
-#minrad_ = 3
-#maxrad_ = 60
-#longlat_thresh2_ = 1.8
-#rad_thresh_ = 1.0
-#template_thresh_ = 0.5
-#target_thresh_ = 0.1
-
-#tuning
-#minrad_ = 3
-#maxrad_ = 60
-#longlat_thresh2_ = 1.8
-#rad_thresh_ = 1.0
-#template_thresh_ = 0.5
-#target_thresh_ = 0.05
-
 
 @click.group()
 def dl():
@@ -64,62 +48,6 @@ def dl():
     pass
 
 
-########################
-#def get_param_i(param, i):
-#    """Gets correct parameter for iteration i.
-#
-#    Parameters
-#    ----------
-#    param : list
-#        List of model hyperparameters to be iterated over.
-#    i : integer
-#        Hyperparameter iteration.
-#
-#    Returns
-#    -------
-#    Correct hyperparameter for iteration i.
-#    """
-#    if len(param) > i:
-#        return param[i]
-#    else:
-#        return param[0]
-
-########################
-
-
-#def custom_image_generator(data, target, batch_size=32):
-#    """Custom image generator that manipulates image/target pairs to prevent
-#    overfitting in the Convolutional Neural Network.
-#
-#    Parameters
-#    ----------
-#    data : array
-#        Input images.
-#    target : array
-#        Target images.
-#    batch_size : int, optional
-#        Batch size for image manipulation.
-#
-#    Yields
-#    ------
-#    Manipulated images and targets.
-#    """
-#    
-#    D = data.shape[0]
-#    while True:
-#        shuffle_index = np.arange(D)
-#        # only shuffle once each loop through the data
-#        np.random.shuffle(shuffle_index)
-#        for i in np.arange(0, len(data), batch_size):
-#            index = shuffle_index[i:i + batch_size]
-#            d, t = data[index].copy(), target[index].copy()
-#            
-#            d = d.transpose([1,0,2,3,4])
-#            yield ([d[0],d[1]], t)
-#            del d
-#            del t
-
-
 def generator_with_replacement(data, target, batch_size=32):
     augmentation = iaa.Sequential([
             iaa.Fliplr(0.5),
@@ -129,9 +57,7 @@ def generator_with_replacement(data, target, batch_size=32):
     while True:
         indices = [np.random.randint(D) for _ in range(batch_size)]
         d, t = data[indices].copy(), target[indices].copy()
-        #d = d.transpose([1,0,2,3,4])
         
-        # -------
         DEM = d[:,0,...]
         IR = d[:,1,...]
         DEM = np.squeeze(DEM.transpose([3,1,2,0]))
@@ -147,7 +73,6 @@ def generator_with_replacement(data, target, batch_size=32):
         DEM = DEM.transpose([2,0,1])[..., np.newaxis]
         IR = IR.transpose([2,0,1])[..., np.newaxis]
         t = t.transpose([2,0,1])[..., np.newaxis]
-        # --------
         
         yield ([DEM,IR], t)
         del d
@@ -191,9 +116,9 @@ def diagnostic(res, beta):
 
     w = np.where(N_match > 0)
     counter, N_match, N_csv, N_detect,\
-        mrad, err_lo, err_la, errr_, frac_dupes =\
+        mrad, err_lo, err_la, frac_dupes =\
         counter[w], N_match[w], N_csv[w], N_detect[w],\
-        mrad[w], err_lo[w], err_la[w], err_r[w], frac_duplicates[w]
+        mrad[w], err_lo[w], err_la[w], frac_duplicates[w]
 
     precision = N_match / (N_match + (N_detect - N_match))
     recall = N_match / N_csv
@@ -233,12 +158,11 @@ def get_metrics(data, craters_images, model, name, minrad, maxrad,
     beta : int, optional
         Beta value when calculating F-beta score. Defaults to 1.
     """
+    
     X = data[0]
-    Y = data[1]
     craters, images = craters_images
     # Get csvs of human-counted craters
     csvs = []
-#    minrad, maxrad = 3, 50
     cutrad, n_csvs = 0.8, len(X)
     diam = 'Diameter (pix)'
 
@@ -253,11 +177,6 @@ def get_metrics(data, craters_images, model, name, minrad, maxrad,
             csvs.append([-2])
             continue
         # remove small/large/half craters
-#        csv = csv[(csv[diam] < 2 * maxrad) & (csv[diam] > 2 * minrad)]
-#        csv = csv[(csv['x'] + cutrad * csv[diam] / 2 <= dim)]
-#        csv = csv[(csv['y'] + cutrad * csv[diam] / 2 <= dim)]
-#        csv = csv[(csv['x'] - cutrad * csv[diam] / 2 > 0)]
-#        csv = csv[(csv['y'] - cutrad * csv[diam] / 2 > 0)]
         csv = csv[(csv[diam] < 2 * maxrad) & (csv[diam] > 2 * minrad)]
         csv = csv[(csv['x (pix)'] + cutrad * csv[diam] / 2 <= dim)]
         csv = csv[(csv['y (pix)'] + cutrad * csv[diam] / 2 <= dim)]
@@ -266,22 +185,11 @@ def get_metrics(data, craters_images, model, name, minrad, maxrad,
         if len(csv) < 3:    # Exclude csvs with few craters
             csvs.append([-1])
         else:
-#            csv_coords = np.asarray((csv['x'], csv['y'], csv[diam] / 2)).T
             csv_coords = np.asarray((csv['x (pix)'], csv['y (pix)'], csv[diam] / 2)).T
             csvs.append(csv_coords)
 
-    # Calculate custom metrics
-#    print("csvs: {}".format(len(csvs)))
-#    print("")
-#    print("*********Custom Loss*********")
-#    recall, precision, fscore = [], [], []
-#    frac_new, frac_new2, mrad = [], [], []
-#    err_lo, err_la, err_r = [], [], []
-#    frac_duplicates = []
-
     if isinstance(model, Model):
         preds = None
-#        print(X[6].min(),X[6].max(),X.dtype,np.percentile(X[6],99))
         X = X.transpose([1,0,2,3,4])
         preds = model.predict([X[0], X[1]], verbose=1, batch_size=5)
         # save
@@ -293,9 +201,6 @@ def get_metrics(data, craters_images, model, name, minrad, maxrad,
         preds = h5f[name][:]
     else:
         preds = model
-    # print(csvs)
-    countme = [i for i in range(n_csvs) if len(csvs[i]) >= 3]
-#    print("Processing {} fields".format(len(countme)))
 
     # preds contains a large number of predictions,
     # so we run the template code in parallel.
@@ -312,61 +217,16 @@ def get_metrics(data, craters_images, model, name, minrad, maxrad,
     if len(res) == 0:
         print("No valid results: ", res)
         return None
+    
     # At this point we've processed the predictions with the template matching
     # algorithm, now calculate the metrics from the data.
-    diag = diagnostic(res, beta)
-    return diag
-#    print(len(diag["recall"]))
-#    # print("binary XE score = %f" % model.evaluate(X, Y))
-#    if len(diag["recall"]) > 3:
-#        metric_data = [("N_match/N_csv (recall)", diag["recall"]),
-#                       ("N_match/(N_match + (N_detect-N_match)) (precision)",
-#                       diag["precision"]),
-#                       ("F_{} score".format(beta), diag["fscore"]),
-#                       ("(N_detect - N_match)/N_detect" +
-#                        "(fraction of craters that are new)",
-#                       diag["frac_new"]),
-#                       ("(N_detect - N_match)/N_csv (fraction" +
-#                        "of craters that are new, 2)", diag["frac_new2"])]
-#
-#        for fname, data in metric_data:
-#            print("mean and std of %s = %f, %f" %
-#                  (fname, np.mean(data), np.std(data)))
-#        for fname, data in [("fractional longitude diff", diag["err_lo"]),
-#                            ("fractional latitude diff", diag["err_la"]),
-#                            ("fractional radius diff", diag["err_r"]),
-#                            ]:
-#            print("median and IQR %s = %f, 25:%f, 75:%f" %
-#                  (fname,
-#                   np.median(data),
-#                   np.percentile(data, 25),
-#                   np.percentile(data, 75)))
-#
-#        print("""mean and std of maximum detected pixel radius in an image =
-#             %f, %f""" % (np.mean(diag["maxrad"]), np.std(diag["maxrad"])))
-#        print("""absolute maximum detected pixel radius over all images =
-#              %f""" % np.max(diag["maxrad"]))
-#        print("")
-
-
-########################
+    
+    return diagnostic(res, beta)
 
 
 def test_model(Data, Craters, MP, minrad, maxrad, longlat_thresh2, rad_thresh,
                template_thresh, target_thresh):
-    # Static params
-#    dim = MP['dim']
-#    nb_epoch = MP['epochs']
-#    bs = MP['bs']
-#
-#    # Iterating params
-#    FL = MP['filter_length'][0]
-#    learn_rate = MP['lr'][0]
-#    n_filters = MP['n_filters'][0]
-#    init = MP['init'][0]
-#    lmbda = MP['lambda'][0]
-#    drop = MP['dropout'][0]
-
+    
     try:
         model = load_model(MP["model"])
     except:
@@ -438,19 +298,6 @@ def train_and_test_model(Data, Craters, MP):
                         validation_data=([Data['dev'][0][val_sample,0], Data['dev'][0][val_sample,1]], Data['dev'][1][val_sample]),
                         callbacks=[save_model, tensorboard, tbi_test],
                         epochs=nb_epoch)
-
-#    print("###################################")
-#    print("##########END_OF_RUN_INFO##########")
-#    print("""learning_rate=%e, batch_size=%d, filter_length=%e, n_epoch=%d
-#          n_train=%d, img_dimensions=%d, init=%s, n_filters=%d, lambda=%e
-#          dropout=%f""" % (learn_rate, bs, FL, nb_epoch, MP['n_train'],
-#                           MP['dim'], init, n_filters, lmbda, drop))
-#    if MP["calculate_custom_loss"]:
-#        get_metrics(Data['test'], Craters['test'], dim, model, "test")
-#    print("###################################")
-#    print("###################################")
-
-########################
 
 
 def make_image(tensor):
@@ -676,35 +523,13 @@ def train_model(test, test_dataset, model):
     MP['n_dev'] = len(MP["dev_indices"]) * 1000
     MP['n_test'] = len(MP["test_indices"]) * 1000
 
-    # Save model (binary flag) and directory.
-    #MP['save_models'] = 1
-    #MP["calculate_custom_loss"] = False
-    #MP['save_dir'] = 'models'
-    #MP['final_save_name'] = 'model.h5'
-
     # initial model filename
     MP["model"] = model
 
     # testing only
     MP["test"] = test
     MP["test_dataset"] = test_dataset
-#
-#    # Model Parameters (to potentially iterate over, keep in lists).
-#    # runs.csv looks like
-#    # filter_length,lr,n_filters,init,lambda,dropout
-#    # 3,0.0001,112,he_normal,1e-6,0.15
-#    #
-#    # each line is a new run.
-#    df = pd.read_csv("runs.csv")
-#    for na, ty in [("filter_length", int),
-#                   ("lr", float),
-#                   ("n_filters", int),
-#                   ("init", str),
-#                   ("lambda", float),
-#                   ("dropout", float)]:
-#        MP[na] = df[na].astype(ty).values
-#
-#    MP['N_runs'] = len(MP['lambda'])    # Number of runs
+
     MP['filter_length'] = [3]           # Filter length
     MP['lr'] = [0.0001]                # Learning rate
     MP['n_filters'] = [112]             # Number of filters
