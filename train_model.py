@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 import h5py
 
-from keras.models import Model, load_model
+from keras.models import load_model
 from keras.callbacks import ModelCheckpoint, TensorBoard, Callback
 from deepmars.YNET.model import build_YNET
 import deepmars.features.template_match_target as tmt
@@ -25,6 +25,7 @@ from keras.backend.tensorflow_backend import set_session
 from imgaug import augmenters as iaa
 from joblib import Parallel, delayed
 import config as cfg
+from cratertools.metric import match_craters
 
 # allow free allocation of gpu memory
 config = tf.ConfigProto()
@@ -120,7 +121,7 @@ def diagnostic(res, beta):
     return dict(precision=precision, recall=recall, fscore=fscore)
     
 
-def get_metrics(data, craters_images, model, name, minrad, maxrad,
+def get_metrics(data, craters_images, model, preds, name, minrad, maxrad,
                 longlat_thresh2, rad_thresh, template_thresh, target_thresh,
                 dim=256, beta=1, offset=0, rmv_oor_csvs=0):
     """Function that prints pertinent metrics at the end of each epoch.
@@ -136,6 +137,10 @@ def get_metrics(data, craters_images, model, name, minrad, maxrad,
     beta : int, optional
         Beta value when calculating F-beta score. Defaults to 1.
     """
+    
+    # Either a model is provided to make predictions or the predictions have
+    # already been made
+    assert (model is not None) or (preds is not None)
     
     X = data[0]
     craters, images = craters_images
@@ -155,7 +160,7 @@ def get_metrics(data, craters_images, model, name, minrad, maxrad,
         if not found:
             csvs.append([-2])
             continue
-        # remove small/large/half craters
+        # Remove small/large/half craters
         csv = csv[(csv[diam] < 2 * maxrad) & (csv[diam] > 2 * minrad)]
         csv = csv[(csv['x (pix)'] + cutrad * csv[diam] / 2 <= dim)]
         csv = csv[(csv['y (pix)'] + cutrad * csv[diam] / 2 <= dim)]
@@ -167,20 +172,15 @@ def get_metrics(data, craters_images, model, name, minrad, maxrad,
             csv_coords = np.asarray((csv['x (pix)'], csv['y (pix)'], csv[diam] / 2)).T
             csvs.append(csv_coords)
 
-    if isinstance(model, Model):
-        preds = None
+    if model is not None:
+        # A model has been provided so we must make predictions
         X = X.transpose([1,0,2,3,4])
         preds = model.predict([X[0], X[1]], verbose=1, batch_size=5)
-        # save
-        h5f = h5py.File("predictions.hdf5", 'w')
+        # Save predictions
+        h5f = h5py.File('predictions.hdf5', 'w')
         h5f.create_dataset(name, data=preds)
-        print("Successfully generated and saved model predictions.")
-    elif model is None:
-        h5f = h5py.File("predictions.hdf5", 'r')
-        preds = h5f[name][:]
-    else:
-        h5f = h5py.File(model, 'r')
-        preds = h5f[name][:]
+        print('Successfully generated and saved model predictions.')
+
     # preds contains a large number of predictions,
     # so we run the template code in parallel.
     res = Parallel(n_jobs=16,
@@ -194,7 +194,7 @@ def get_metrics(data, craters_images, model, name, minrad, maxrad,
                               for i in range(n_csvs) if len(csvs[i]) >= 3)
 
     if len(res) == 0:
-        print("No valid results: ", res)
+        print('No valid results: ', res)
         return None
     
     # At this point we've processed the predictions with the template matching
@@ -206,13 +206,20 @@ def get_metrics(data, craters_images, model, name, minrad, maxrad,
 def test_model(Data, Craters, MP, minrad, maxrad, longlat_thresh2, rad_thresh,
                template_thresh, target_thresh):
     
-    try:
-        model = load_model(MP["model"])
-    except:
-        model = MP["model"]
+    if MP['model'] is not None:
+        model = load_model(MP['model'])
+        preds = None
+    else:
+        # no model specified so load predictions file
+        h5f = h5py.File(MP['predictions'], 'r')
+        preds = h5f[MP['test_dataset']][:]
+        model = None
 
     diag = get_metrics(Data[MP["test_dataset"]],
-                       Craters[MP["test_dataset"]], model, MP["test_dataset"],
+                       Craters[MP["test_dataset"]],
+                       model,
+                       preds,
+                       MP["test_dataset"],
                        minrad=minrad, maxrad=maxrad,
                        longlat_thresh2=longlat_thresh2,
                        rad_thresh=rad_thresh, template_thresh=template_thresh,
@@ -451,7 +458,8 @@ def get_models(MP):
 @click.option("--test", is_flag=True, default=False)
 @click.option("--test_dataset", default="test")
 @click.option("--model", default=None)
-def train_model(test, test_dataset, model):
+@click.option("--predictions", default=None)
+def train_model(test, test_dataset, model, predictions):
     """Run Convolutional Neural Network Training
 
     Execute the training of a (UNET) Convolutional Neural Network on
@@ -480,12 +488,15 @@ def train_model(test, test_dataset, model):
     MP['dev_indices'] = [41000]#list(np.arange(161000, 206000, 4000))
     MP['test_indices'] = [42000]#list(np.arange(163000, 206000, 4000))
 
-    MP['n_train'] = len(MP["train_indices"]) * 1000
-    MP['n_dev'] = len(MP["dev_indices"]) * 1000
-    MP['n_test'] = len(MP["test_indices"]) * 1000
+    MP['n_train'] = len(MP['train_indices']) * 1000
+    MP['n_dev'] = len(MP['dev_indices']) * 1000
+    MP['n_test'] = len(MP['test_indices']) * 1000
 
     # initial model filename
-    MP["model"] = model
+    MP['model'] = model
+    
+    # initial predictions filename
+    MP['predictions'] = predictions
 
     # testing only
     MP["test"] = test
