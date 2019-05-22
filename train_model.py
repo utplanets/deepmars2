@@ -10,14 +10,13 @@ import numpy as np
 import pandas as pd
 import h5py
 
-from keras.models import Model
-from keras.models import load_model
+from keras.models import Model, load_model
 from keras.callbacks import ModelCheckpoint, TensorBoard, Callback
 from deepmars.YNET.model import build_YNET
 import deepmars.features.template_match_target as tmt
 import click
 import logging
-from dotenv import find_dotenv, load_dotenv
+#from dotenv import find_dotenv, load_dotenv
 import os
 from tqdm import tqdm
 import time
@@ -25,7 +24,7 @@ import tensorflow as tf
 from keras.backend.tensorflow_backend import set_session
 from imgaug import augmenters as iaa
 from joblib import Parallel, delayed
-import pickle
+import config as cfg
 
 # allow free allocation of gpu memory
 config = tf.ConfigProto()
@@ -39,13 +38,6 @@ set_session(sess)
 def dl():
     log_fmt = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     logging.basicConfig(level=logging.INFO, format=log_fmt)
-
-    # find .env automagically by walking up directories until it's found, then
-    # load up the .env entries as environment variables
-    load_dotenv(find_dotenv())
-    import sys
-    sys.path.append(os.getenv("DM_ROOTDIR"))
-    pass
 
 
 def generator_with_replacement(data, target, batch_size=32):
@@ -111,36 +103,22 @@ def diagnostic(res, beta):
 
     counter, N_match, N_csv, N_detect,\
         mrad, err_lo, err_la, err_r, frac_duplicates = np.array(res).T
-
-    w = np.where(N_match == 0)
-
-    w = np.where(N_match > 0)
-    counter, N_match, N_csv, N_detect,\
-        mrad, err_lo, err_la, frac_dupes =\
-        counter[w], N_match[w], N_csv[w], N_detect[w],\
-        mrad[w], err_lo[w], err_la[w], frac_duplicates[w]
-
-    precision = N_match / (N_match + (N_detect - N_match))
-    recall = N_match / N_csv
-    fscore = (1 + beta**2) * (recall * precision) / \
-             (precision * beta**2 + recall)
-    diff = N_detect - N_match
-    frac_new = diff / (N_detect + diff)
-    frac_new2 = diff / (N_csv + diff)
-    frac_duplicates = frac_dupes
-
-    return dict(precision=precision,
-                recall=recall,
-                fscore=fscore,
-                frac_new=frac_new,
-                frac_new2=frac_new2,
-                err_lo=err_lo,
-                err_la=err_la,
-                err_r=err_r,
-                frac_duplicates=frac_duplicates,
-                maxrad=mrad,
-                counter=counter, N_match=N_match, N_csv=N_csv)
-
+    try:
+        positives = N_detect.sum()
+        true_positives = N_match.sum()
+        ground_truth = N_csv.sum()
+        precision = true_positives / positives
+        recall = true_positives / ground_truth
+        fscore = (1 + beta**2) * (recall * precision) / \
+                 (precision * beta**2 + recall)
+    except:
+        # division by zero occured, so no craters were detected
+        precision = 0
+        recall = 0
+        fscore = 0
+    
+    return dict(precision=precision, recall=recall, fscore=fscore)
+    
 
 def get_metrics(data, craters_images, model, name, minrad, maxrad,
                 longlat_thresh2, rad_thresh, template_thresh, target_thresh,
@@ -163,7 +141,8 @@ def get_metrics(data, craters_images, model, name, minrad, maxrad,
     craters, images = craters_images
     # Get csvs of human-counted craters
     csvs = []
-    cutrad, n_csvs = 0.8, len(X)
+    cutrad = 0.8
+    n_csvs = len(X)
     diam = 'Diameter (pix)'
 
     for i in range(len(X)):
@@ -200,12 +179,12 @@ def get_metrics(data, craters_images, model, name, minrad, maxrad,
         h5f = h5py.File("predictions.hdf5", 'r')
         preds = h5f[name][:]
     else:
-        preds = model
-
+        h5f = h5py.File(model, 'r')
+        preds = h5f[name][:]
     # preds contains a large number of predictions,
     # so we run the template code in parallel.
     res = Parallel(n_jobs=16,
-                   verbose=0)(delayed(t2c)(preds[i][:,:,0], csvs[i], i,
+                   verbose=1)(delayed(t2c)(preds[i][:,:,0], csvs[i], i,
                                            minrad=minrad,
                                            maxrad=maxrad,
                                            longlat_thresh2=longlat_thresh2,
@@ -230,7 +209,7 @@ def test_model(Data, Craters, MP, minrad, maxrad, longlat_thresh2, rad_thresh,
     try:
         model = load_model(MP["model"])
     except:
-        model = None
+        model = MP["model"]
 
     diag = get_metrics(Data[MP["test_dataset"]],
                        Craters[MP["test_dataset"]], model, MP["test_dataset"],
@@ -280,12 +259,12 @@ def train_and_test_model(Data, Craters, MP):
     # Callbacks
     now = time.strftime('%c')
     n_samples = 1000
-    save_folder = os.path.join(os.getenv('DM_ROOTDIR'), 'YNET/models', now)
+    save_folder = os.path.join(cfg.input_root, 'YNET/models', now)
     os.mkdir(save_folder)
     save_name = save_folder + '/{epoch:02d}-{val_loss:.2f}.hdf5'
-    save_model = ModelCheckpoint(os.path.join(os.getenv('DM_ROOTDIR'),
+    save_model = ModelCheckpoint(os.path.join(cfg.input_root,
                                                        save_name))
-    log_dir=os.path.join(os.getenv('DM_ROOTDIR'), 'YNET/logs', now)
+    log_dir=os.path.join(cfg.input_root, 'YNET/logs', now)
     tensorboard = TensorBoard(log_dir, batch_size=bs, histogram_freq=1) 
     tbi_test = TensorBoardImage(log_dir)
     
@@ -448,40 +427,22 @@ def get_models(MP):
 
 #    # Iterate over parameters
     if MP["test"]:
-#        minrad_ = 3
-#        maxrad_ = 60
+        minrad_ = 3
+        maxrad_ = 60
         longlat_thresh2_ = 1.8
         rad_thresh_ = 1.0
-#        template_thresh_ = 0.65
-#        target_thresh_ = 0.25
+        template_thresh_ = 0.5
+        target_thresh_ = 0.1
         
-        grid = {}
-        minradii = [3,8,13,18,23,28,33,38,43,48,53,58]
-        template_threshes = [0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8]
-        target_threshes = [0.05, 0.1, 0.15, 0.2, 0.25, 0.3]
-        for minrad_ in minradii:
-            maxrad_ = minrad_ + 5
-            for template_thresh_ in template_threshes:
-                for target_thresh_ in target_threshes:
-                    
-                    diag = test_model(Data, Craters, MP, minrad=minrad_,
-                                      maxrad=maxrad_, 
-                                      longlat_thresh2=longlat_thresh2_,
-                                      rad_thresh=rad_thresh_,
-                                      template_thresh=template_thresh_,
-                                      target_thresh=target_thresh_)
-                    grid[(minrad_, template_thresh_, target_thresh_)] = diag
-                    print('------------------------------------------------')
-                    print('radius: {} - {}'.format(minrad_, maxrad_))
-                    print('template threshold: {}'.format(template_thresh_))
-                    print('target threshold: {}'.format(target_thresh_))
-                    try:
-                        print('Precision: {}'.format(diag['precision'].mean()))
-                        print('Recall: {}'.format(diag['recall'].mean()))
-                        print('F1: {}'.format(diag['fscore'].mean()))
-                    except:
-                        print('No Craters Found')
-                    pickle.dump(grid, open('grid2.pkl', 'wb'))
+        diag = test_model(Data, Craters, MP, minrad=minrad_,
+                          maxrad=maxrad_, 
+                          longlat_thresh2=longlat_thresh2_,
+                          rad_thresh=rad_thresh_,
+                          template_thresh=template_thresh_,
+                          target_thresh=target_thresh_)
+        print('Precision: {}'.format(diag['precision']))
+        print('Recall: {}'.format(diag['recall']))
+        print('F1: {}'.format(diag['fscore']))
     else:
         train_and_test_model(Data, Craters, MP)
 
@@ -501,7 +462,7 @@ def train_model(test, test_dataset, model):
     MP = {}
 
     # Directory of train/dev/test image and crater hdf5 files.
-    MP['dir'] = os.path.join(os.getenv("DM_ROOTDIR"), 'data/processed/')
+    MP['dir'] = os.path.join(cfg.input_root, 'data/processed/')
 
     # Image width/height, assuming square images.
     MP['dim'] = 256
@@ -531,7 +492,7 @@ def train_model(test, test_dataset, model):
     MP["test_dataset"] = test_dataset
 
     MP['filter_length'] = [3]           # Filter length
-    MP['lr'] = [0.0001]                # Learning rate
+    MP['lr'] = [0.0001]                 # Learning rate
     MP['n_filters'] = [112]             # Number of filters
     MP['init'] = ['he_normal']          # Weight initialization
     MP['lambda'] = [1e-6]               # Weight regularization
