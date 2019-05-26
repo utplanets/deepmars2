@@ -12,11 +12,10 @@ import h5py
 
 from keras.models import load_model
 from keras.callbacks import ModelCheckpoint, TensorBoard, Callback
-from deepmars.YNET.model import build_YNET
-import deepmars.features.template_match_target as tmt
+from deepmars2.YNET.model import build_YNET
+import deepmars2.features.template_match_target as tmt
 import click
 import logging
-#from dotenv import find_dotenv, load_dotenv
 import os
 from tqdm import tqdm
 import time
@@ -25,7 +24,9 @@ from keras.backend.tensorflow_backend import set_session
 from imgaug import augmenters as iaa
 from joblib import Parallel, delayed
 import config as cfg
-from cratertools.metric import match_craters
+
+# Reduce Tensorflow verbosity
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
 # allow free allocation of gpu memory
 config = tf.ConfigProto()
@@ -72,16 +73,9 @@ def generator_with_replacement(data, target, batch_size=32):
         del t
 
 
-def t2c(pred, csv, i, minrad, maxrad, longlat_thresh2, rad_thresh,
-        template_thresh, target_thresh):
+def t2c(pred, csv, i):
     return np.hstack([i,
-                      tmt.template_match_t2c(pred, csv,
-                                             minrad=minrad,
-                                             maxrad=maxrad,
-                                             longlat_thresh2=longlat_thresh2,
-                                             rad_thresh=rad_thresh,
-                                             template_thresh=template_thresh,
-                                             target_thresh=target_thresh)][1:])
+                      tmt.template_match_t2c(pred, csv)][1:])
 
 
 def diagnostic(res, beta):
@@ -113,7 +107,7 @@ def diagnostic(res, beta):
         fscore = (1 + beta**2) * (recall * precision) / \
                  (precision * beta**2 + recall)
     except:
-        # division by zero occured, so no craters were detected
+        # division by zero occured, so no craters were matched
         precision = 0
         recall = 0
         fscore = 0
@@ -121,8 +115,7 @@ def diagnostic(res, beta):
     return dict(precision=precision, recall=recall, fscore=fscore)
     
 
-def get_metrics(data, craters_images, model, preds, name, minrad, maxrad,
-                longlat_thresh2, rad_thresh, template_thresh, target_thresh,
+def get_metrics(data, craters_images, model, preds, name,
                 dim=256, beta=1, offset=0, rmv_oor_csvs=0):
     """Function that prints pertinent metrics at the end of each epoch.
 
@@ -148,7 +141,7 @@ def get_metrics(data, craters_images, model, preds, name, minrad, maxrad,
     csvs = []
     cutrad = 0.8
     n_csvs = len(X)
-    diam = 'Diameter (pix)'
+#    diam = 'Diameter (pix)'
 
     for i in range(len(X)):
         imname = images[i]  # name = "img_{0:05d}".format(i)
@@ -158,18 +151,20 @@ def get_metrics(data, craters_images, model, preds, name, minrad, maxrad,
                 csv = crat[imname]
                 found = True
         if not found:
+            print('not found: ', imname)
             csvs.append([-2])
             continue
         # Remove small/large/half craters
-        csv = csv[(csv[diam] < 2 * maxrad) & (csv[diam] > 2 * minrad)]
-        csv = csv[(csv['x (pix)'] + cutrad * csv[diam] / 2 <= dim)]
-        csv = csv[(csv['y (pix)'] + cutrad * csv[diam] / 2 <= dim)]
-        csv = csv[(csv['x (pix)'] - cutrad * csv[diam] / 2 > 0)]
-        csv = csv[(csv['y (pix)'] - cutrad * csv[diam] / 2 > 0)]
+        csv = csv[csv['Diameter (pix)'] < 2 * cfg.maxrad_]
+        csv = csv[csv['Diameter (pix)'] > 2 * cfg.minrad_]
+        csv = csv[csv['x (pix)'] + cutrad * csv['Diameter (pix)'] / 2 <= dim]
+        csv = csv[csv['y (pix)'] + cutrad * csv['Diameter (pix)'] / 2 <= dim]
+        csv = csv[csv['x (pix)'] - cutrad * csv['Diameter (pix)'] / 2 > 0]
+        csv = csv[csv['y (pix)'] - cutrad * csv['Diameter (pix)'] / 2 > 0]
         if len(csv) < 3:    # Exclude csvs with few craters
             csvs.append([-1])
         else:
-            csv_coords = np.asarray((csv['x (pix)'], csv['y (pix)'], csv[diam] / 2)).T
+            csv_coords = np.asarray((csv['x (pix)'], csv['y (pix)'], csv['Diameter (pix)'] / 2)).T
             csvs.append(csv_coords)
 
     if model is not None:
@@ -184,13 +179,7 @@ def get_metrics(data, craters_images, model, preds, name, minrad, maxrad,
     # preds contains a large number of predictions,
     # so we run the template code in parallel.
     res = Parallel(n_jobs=16,
-                   verbose=1)(delayed(t2c)(preds[i][:,:,0], csvs[i], i,
-                                           minrad=minrad,
-                                           maxrad=maxrad,
-                                           longlat_thresh2=longlat_thresh2,
-                                           rad_thresh=rad_thresh,
-                                           template_thresh=template_thresh,
-                                           target_thresh=target_thresh)
+                   verbose=1)(delayed(t2c)(preds[i][:,:,0], csvs[i], i)
                               for i in range(n_csvs) if len(csvs[i]) >= 3)
 
     if len(res) == 0:
@@ -203,8 +192,7 @@ def get_metrics(data, craters_images, model, preds, name, minrad, maxrad,
     return diagnostic(res, beta)
 
 
-def test_model(Data, Craters, MP, minrad, maxrad, longlat_thresh2, rad_thresh,
-               template_thresh, target_thresh):
+def test_model(Data, Craters, MP):
     
     if MP['model'] is not None:
         model = load_model(MP['model'])
@@ -219,11 +207,7 @@ def test_model(Data, Craters, MP, minrad, maxrad, longlat_thresh2, rad_thresh,
                        Craters[MP["test_dataset"]],
                        model,
                        preds,
-                       MP["test_dataset"],
-                       minrad=minrad, maxrad=maxrad,
-                       longlat_thresh2=longlat_thresh2,
-                       rad_thresh=rad_thresh, template_thresh=template_thresh,
-                       target_thresh=target_thresh)
+                       MP["test_dataset"])
     
     return diag
 
@@ -266,12 +250,12 @@ def train_and_test_model(Data, Craters, MP):
     # Callbacks
     now = time.strftime('%c')
     n_samples = 1000
-    save_folder = os.path.join(cfg.input_root, 'YNET/models', now)
+    save_folder = os.path.join(cfg.root_dir, 'YNET/models', now)
     os.mkdir(save_folder)
     save_name = save_folder + '/{epoch:02d}-{val_loss:.2f}.hdf5'
-    save_model = ModelCheckpoint(os.path.join(cfg.input_root,
+    save_model = ModelCheckpoint(os.path.join(cfg.root_dir,
                                                        save_name))
-    log_dir=os.path.join(cfg.input_root, 'YNET/logs', now)
+    log_dir=os.path.join(cfg.root_dir, 'YNET/logs', now)
     tensorboard = TensorBoard(log_dir, batch_size=bs, histogram_freq=1) 
     tbi_test = TensorBoardImage(log_dir)
     
@@ -434,19 +418,14 @@ def get_models(MP):
 
 #    # Iterate over parameters
     if MP["test"]:
-        minrad_ = 3
-        maxrad_ = 60
-        longlat_thresh2_ = 1.8
-        rad_thresh_ = 1.0
-        template_thresh_ = 0.5
-        target_thresh_ = 0.1
+#        minrad_ = 3
+#        maxrad_ = 60
+#        longlat_thresh2_ = 1.8
+#        rad_thresh_ = 1.0
+#        template_thresh_ = 0.5
+#        target_thresh_ = 0.1
         
-        diag = test_model(Data, Craters, MP, minrad=minrad_,
-                          maxrad=maxrad_, 
-                          longlat_thresh2=longlat_thresh2_,
-                          rad_thresh=rad_thresh_,
-                          template_thresh=template_thresh_,
-                          target_thresh=target_thresh_)
+        diag = test_model(Data, Craters, MP)
         print('Precision: {}'.format(diag['precision']))
         print('Recall: {}'.format(diag['recall']))
         print('F1: {}'.format(diag['fscore']))
@@ -456,7 +435,7 @@ def get_models(MP):
 
 @dl.command()
 @click.option("--test", is_flag=True, default=False)
-@click.option("--test_dataset", default="test")
+@click.option("--test_dataset", default="ran2")
 @click.option("--model", default=None)
 @click.option("--predictions", default=None)
 def train_model(test, test_dataset, model, predictions):
@@ -470,7 +449,7 @@ def train_model(test, test_dataset, model, predictions):
     MP = {}
 
     # Directory of train/dev/test image and crater hdf5 files.
-    MP['dir'] = os.path.join(cfg.input_root, 'data/processed/')
+    MP['dir'] = os.path.join(cfg.root_dir, 'data/processed/')
 
     # Image width/height, assuming square images.
     MP['dim'] = 256
