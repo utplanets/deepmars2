@@ -7,5 +7,5 @@ template_thresh_ = 0.5
 target_thresh_ = 0.1
 
 
-input_root = "/disks/work/james/deepmars"
-output_root = "/disks/work/james/deepmars"
+input_root = "/mnt/disks/rawdata"
+output_root = "/mnt/disks/rawdata"

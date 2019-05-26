@@ -12,7 +12,7 @@ import h5py
 
 from keras.models import load_model
 from keras.callbacks import ModelCheckpoint, TensorBoard, Callback
-from deepmars.YNET.model import build_YNET
+from YNET.model import build_YNET
 import deepmars.features.template_match_target as tmt
 import click
 import logging
