@@ -253,8 +253,8 @@ def train_and_test_model(Data, Craters, MP):
     save_folder = os.path.join(cfg.root_dir, 'YNET/models', now)
     os.mkdir(save_folder)
     save_name = save_folder + '/{epoch:02d}-{val_loss:.2f}.hdf5'
-    save_model = ModelCheckpoint(os.path.join(cfg.root_dir,
-                                                       save_name))
+    save_model = ModelCheckpoint(os.path.join(cfg.root_dir, save_name),
+                                 save_best_only=True)
     log_dir=os.path.join(cfg.root_dir, 'YNET/logs', now)
     tensorboard = TensorBoard(log_dir, batch_size=bs, histogram_freq=1) 
     tbi_test = TensorBoardImage(log_dir)
@@ -295,7 +295,8 @@ class TensorBoardImage(Callback):
         super().__init__() 
         self.log_dir = log_dir
 
-    def on_epoch_end(self, epoch, logs={}):
+    def on_epoch_end(self, epoch, logs=None):
+        logs = logs or {}
         data = self.validation_data
         input_DEM = data[0]
         input_IR = data[1]
@@ -312,10 +313,11 @@ class TensorBoardImage(Callback):
                             ])
         
             images.append(make_image(img))
-        
         summary = tf.Summary(value=[
                 tf.Summary.Value(tag='Image {:02d}'.format(i), image=images[i])
-                for i in range(len(images))])
+                for i in range(len(images))] +
+                [tf.Summary.Value(tag='loss', simple_value=logs['loss']),
+                 tf.Summary.Value(tag='val_loss', simple_value=logs['val_loss'])])
         writer = tf.summary.FileWriter(self.log_dir)
         writer.add_summary(summary, epoch)
         writer.close()

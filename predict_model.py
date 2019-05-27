@@ -7,34 +7,23 @@ out duplicates.
 import click
 import logging
 import keras.models as km
-
 import deepmars2.features.template_match_target as tmt
-#import deepmars.utils as utils
 import numpy as np
 import h5py
-#import sys
-#from dotenv import find_dotenv, load_dotenv
 import os
-
-# import deepmars.utils.processing as proc
-#import deepmars2.utils.transform as trf
 import time
 import pandas as pd
-
 from joblib import Parallel, delayed
 import config as cfg
-
 from tqdm import tqdm
 from pyproj import Transformer
+from cratertools import metric
 
 # Reduce Tensorflow verbosity
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
 
 def load_model(model=None):
-    # utils.load_env()
-    # if model is None:
-    #    model = utils.getenv("DM_KERAS_MODEL")
     if isinstance(model, str):
         model = km.load_model(model)
     return model
@@ -64,14 +53,14 @@ def get_model_preds(CP):
         n_imgs = data["input_DEM"].shape[0]
 
     Data = {
-        dtype: [
+        dtype: [ 
             data["input_DEM"][:n_imgs].astype("float32"),
             data["input_IR"][:n_imgs].astype("float32"),
             data["target_masks"][:n_imgs].astype("float32"),
         ]
     }
     data.close()
-    # proc.preprocess(Data)
+    
     def preprocess(Data):
         for key in Data:
             if len(Data[key][0]) == 0:
@@ -85,6 +74,7 @@ def get_model_preds(CP):
     model = load_model(CP["dir_model"])
     logger.info("Making prediction on %d images" % n_imgs)
     preds = model.predict([Data[dtype][0], Data[dtype][1]], batch_size=10)
+    #preds = model.predict(Data[dtype][0], batch_size=10)[..., np.newaxis]
     logger.info("Finished prediction on %d images" % n_imgs)
     # save
     h5f = h5py.File(CP["dir_preds"], "w")
@@ -157,7 +147,8 @@ def match_template(pred, craters, i, index, dim, withmatches=False):
             found = True
         if found:
             minrad, maxrad = 3, 50
-            cutrad = 0.8
+            #cutrad = 0.8
+            cutrad = 0
             csv = csv[(csv[diam] < 2 * maxrad) & (csv[diam] > 2 * minrad)]
             csv = csv[(csv["x"] + cutrad * csv[diam] / 2 <= dim[0])]
             csv = csv[(csv["y"] + cutrad * csv[diam] / 2 <= dim[1])]
@@ -194,8 +185,6 @@ def match_template(pred, craters, i, index, dim, withmatches=False):
 
 
 def long_lat_rad_km_from_pix(coords, box_size, central_lat_lon, dim=256):
-#    x = coords[:,0].astype('float64')
-#    y = coords[:,1].astype('float64')
     assert coords.min() >= 0 and coords.max() <= 256
     x = coords[:,0].astype('float64') - dim//2
     y = coords[:,1].astype('float64') - dim//2
@@ -254,12 +243,6 @@ def extract_unique_craters(
     # need for long/lat bounds
     P = h5py.File(CP["dir_data"], 'r')
 
-#    llbd, pbd, distcoeff = (
-#        "longlat_bounds",
-#        "pix_bounds",
-#        "pix_distortion_coefficient",
-#    )
-
     dim = (float(CP["dim"]), float(CP["dim"]))
 
     N_matches_tot = 0
@@ -283,7 +266,6 @@ def extract_unique_craters(
             img = 'img_{:05d}'.format(index + i)
             if img in craters:
                 full_craters[img] = craters[img]
-
     res = Parallel(n_jobs=16, verbose=0)(
         delayed(match_template)(
             preds[i], full_craters, i, index, dim, withmatches=withmatches
@@ -296,17 +278,10 @@ def extract_unique_craters(
         if withmatches:
             matches.append(df2)
         img = 'img_{:05d}'.format(index + i)
+        
         # convert, add to master dist
         if len(coords) > 0:
-#            new_craters_unique = trf.estimate_longlatdiamkm(
-#                dim, P[llbd][img], P[distcoeff][img][0], coords
-#            )
-            # experimental
-#            print(coords)
             new_craters_unique = long_lat_rad_km_from_pix(coords, P['box_size'][i], P['central_lat_lon'][i])
-#            print(new_craters_unique)
-#            import sys
-#            sys.exit()
             N_matches_tot += len(coords)
 
             # Only add unique (non-duplicate) craters
@@ -351,15 +326,14 @@ def extract_unique_craters(
 def predict():
     log_fmt = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     logging.basicConfig(level=logging.INFO, format=log_fmt)
-    # utils.load_env()
     pass
 
 
 @predict.command()
-@click.argument("index", type=int, nargs=-1)
+@click.option("--index", type=int, default=None)
 @click.option("--prefix", default="ran2")
 @click.option("--output_prefix", default=None)
-@click.option("--model", default=None)
+@click.option("--model", default='/disks/work/james/deepmars2/YNET/models/Thu May 16 18:13:31 2019/464-0.07.hdf5')
 def cnn_prediction(index, prefix, output_prefix, model):
     """ CNN predictions.
 
@@ -367,41 +341,32 @@ def cnn_prediction(index, prefix, output_prefix, model):
     process the file with the template matching code.
 
     """
-#    load_dotenv(find_dotenv())
+
     logger = logging.getLogger(__name__)
     logger.info("making predictions.")
     start_time = time.time()
 
-    # if model is None:
-    #    model = os.path.join(utils.getenv("DM_ROOTDIR"),
-    #                         'data/models/model_keras2.h5')
-    #    model = load_model(model)
+    indexstr = "_{:05d}".format(index)
 
-    for ivalue in index:
-        if ivalue is None:
-            indexstr = ""
-        else:
-            indexstr = "_{:05d}".format(ivalue)
+    if output_prefix is None:
+        output_prefix = prefix
+    # Crater Parameters
+    CP = dict(
+        dim=256,
+        datatype=prefix,
+        n_imgs=-1,
+        dir_model=model,
+        dir_data=os.path.join(
+            cfg.root_dir,
+            "data/processed/%s_images%s.hdf5" % (prefix, indexstr),
+        ),
+        dir_preds=os.path.join(
+            cfg.root_dir,
+            "data/predictions/%s_preds%s.hdf5" % (output_prefix, indexstr),
+        ),
+    )
 
-        if output_prefix is None:
-            output_prefix = prefix
-        # Crater Parameters
-        CP = dict(
-            dim=256,
-            datatype=prefix,
-            n_imgs=-1,
-            dir_model=model,
-            dir_data=os.path.join(
-                cfg.root_dir,
-                "data/processed/%s_images%s.hdf5" % (prefix, indexstr),
-            ),
-            dir_preds=os.path.join(
-                cfg.root_dir,
-                "data/predictions/%s_preds%s.hdf5" % (output_prefix, indexstr),
-            ),
-        )
-
-        get_model_preds(CP)
+    get_model_preds(CP)
 
     elapsed_time = time.time() - start_time
     logger.info("Time elapsed: {0:.1f} min".format(elapsed_time / 60.0))
@@ -433,30 +398,23 @@ def make_prediction(llt2, rt, index, prefix, start, stop, matches, model):
 
     # Crater Parameters
     CP = {}
+
     # Image width/height, assuming square images.
     CP["dim"] = 256
+
     # Data type - train, dev, test
     CP["datatype"] = prefix
+
     # Number of images to extract craters from
     CP["n_imgs"] = -1  # all of them
+
     # Hyperparameters
     CP["llt2"] = llt2  # D_{L,L} from Silburt et. al (2019)
     CP["rt"] = rt  # D_{R} from Silburt et. al (2019)
+
     # Location of model to generate predictions (if they don't exist yet)
-#    if model is None:
-#        model = os.path.join(cfg.root_dir, "data/models/model_keras2.h5")
     CP["dir_model"] = model
-    #    # Location of where hdf5 data images are stored
-    #    CP['dir_data'] = os.path.join(utils.getenv("DM_ROOTDIR"),
-    #                     'data/processed/%s_images.hdf5' % CP['datatype'])
-    #    # Location of where model predictions are/will be stored
-    #    CP['dir_preds'] = os.path.join(utils.getenv("DM_ROOTDIR"),
-    #                      'data/processed/%s_preds_n%d.hdf5' % (CP['datatype'],
-    #                      CP['n_imgs']))
-    #    # Location of where final unique crater distribution will be stored
-    #    CP['dir_result'] = os.path.join(utils.getenv("DM_ROOTDIR"),
-    #                       'data/processed/%s_craterdist.npy' % (CP['datatype']))
-    #
+
     # Location of where hdf5 data images are stored
     CP["dir_data"] = os.path.join(
         cfg.root_dir,
@@ -492,6 +450,112 @@ def make_prediction(llt2, rt, index, prefix, start, stop, matches, model):
     elapsed_time = time.time() - start_time
     logger.info("Time elapsed: {0:.1f} min".format(elapsed_time / 60.0))
 
+
+def make_global_statistics(CP):
+    my_craters_h5 = pd.HDFStore(CP['dir_craters'])
+    my_craters = my_craters_h5['all']
+    robbins_h5 = pd.HDFStore(CP['dir_input_craters'])
+    
+    robbins_filtered = pd.concat([
+            robbins_h5[k][(((robbins_h5[k]['x (pix)']-128).abs() < 128) & 
+                           ((robbins_h5[k]['y (pix)']-128).abs() < 128) &
+                           (robbins_h5[k]["Diameter (pix)"] < 2*cfg.maxrad_) &
+                           (robbins_h5[k]["Diameter (pix)"] > 2*cfg.minrad_))]
+            for k in robbins_h5.keys()])
+    cols = ["Lat","Long","Diameter (km)"]
+    robbins_filtered = robbins_filtered[cols]
+    
+    robbins_unique = metric.rep_filter_unique_craters(robbins_filtered,
+                                                      *cols)[0]
+    
+    matched_craters = metric.kn_match_craters(my_craters, robbins_unique,
+                                              *cols)[0]
+    
+    N_match = len(matched_craters)
+    N_robbins = len(robbins_unique)
+    N_detect = len(my_craters)
+    print(N_match, N_robbins, N_detect)
+    precision = N_match / N_detect
+    recall = N_match / N_robbins
+    fscore = 2 * precision * recall / (precision + recall)
+    
+    robbins_h5.close()
+    my_craters_h5.close()
+    
+    return precision, recall, fscore
+
+
+@predict.command()
+@click.argument("llt2", type=float, default=cfg.longlat_thresh2_)
+@click.argument("rt", type=float, default=cfg.rad_thresh_)
+@click.option("--index", type=int, default=None)
+@click.option("--prefix", default="ran2")
+@click.option("--start", default=-1)
+@click.option("--stop", default=-1)
+@click.option("--matches", is_flag=True, default=False)
+@click.option("--model", default=None)
+def global_statistics(llt2, rt, index, prefix, start, stop, matches, model):
+    logger = logging.getLogger(__name__)
+    logger.info("making global statistics.")
+    start_time = time.time()
+    if index is None:
+        indexstr = ""
+    else:
+        indexstr = "_{:05d}".format(index)
+    
+        # Crater Parameters
+    CP = {}
+
+    # Image width/height, assuming square images.
+    CP["dim"] = 256
+
+    # Data type - train, dev, test
+    CP["datatype"] = prefix
+
+    # Number of images to extract craters from
+    CP["n_imgs"] = -1  # all of them
+
+    # Hyperparameters
+    CP["llt2"] = llt2  # D_{L,L} from Silburt et. al (2019)
+    CP["rt"] = rt  # D_{R} from Silburt et. al (2019)
+
+    # Location of model to generate predictions (if they don't exist yet)
+    CP["dir_model"] = model
+
+    # Location of where hdf5 data images are stored
+    CP["dir_data"] = os.path.join(
+        cfg.root_dir,
+        "data/processed/%s_images%s.hdf5" % (CP["datatype"], indexstr),
+    )
+    # Location of where model predictions are/will be stored
+    CP["dir_preds"] = os.path.join(
+        cfg.root_dir,
+        "data/predictions/%s_preds%s.hdf5" % (CP["datatype"], indexstr),
+    )
+    # Location of where final unique crater distribution will be stored
+    CP["dir_result"] = os.path.join(
+        cfg.root_dir,
+        "data/predictions/%s_craterdist%s.npy" % (CP["datatype"], indexstr),
+    )
+    # Location of hdf file containing craters found
+    CP["dir_craters"] = os.path.join(
+        cfg.root_dir,
+        "data/predictions/%s_craterdist%s.hdf5" % (CP["datatype"], indexstr),
+    )
+    # Location of hdf file containing craters found
+    CP["dir_input_craters"] = os.path.join(
+        cfg.root_dir,
+        "data/processed/%s_craters%s.hdf5" % (CP["datatype"], indexstr),
+    )
+    
+    precision, recall, fscore = make_global_statistics(CP)
+    
+    logger.info('Precision: {:1.3f}'.format(precision))
+    logger.info('Recall: {:1.3f}'.format(recall))
+    logger.info('F Score: {:1.3f}'.format(fscore))
+    
+    elapsed_time = time.time() - start_time
+    logger.info("Time elapsed: {0:.1f} min".format(elapsed_time / 60.0))
 
 if __name__ == "__main__":
     predict()
