@@ -1,5 +1,5 @@
 # size parameters
-minrad_ = 5
+minrad_ = 3
 maxrad_ = 40
 longlat_thresh2_ = 1.8
 rad_thresh_ = 1.0

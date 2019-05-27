@@ -1,6 +1,7 @@
 import numpy as np
 from skimage.feature import match_template
 import cv2
+import config as cfg
 
 #####################################
 """
@@ -20,16 +21,9 @@ template_thresh : float
 target_thresh : float
     0-1 range. target[target > target_thresh] = 1, otherwise 0
 """
-#minrad_ = 5
-#maxrad_ = 40
-#longlat_thresh2_ = 1.8
-#rad_thresh_ = 1.0
-#template_thresh_ = 0.5
-#target_thresh_ = 0.1
 
 
-def template_match_t(target, minrad, maxrad, longlat_thresh2, rad_thresh,
-                     template_thresh, target_thresh):
+def template_match_t(target):
     """Extracts crater coordinates (in pixels) from a CNN-predicted target by
     iteratively sliding rings through the image via match_template from
     scikit-image.
@@ -65,10 +59,10 @@ def template_match_t(target, minrad, maxrad, longlat_thresh2, rad_thresh,
     rw = 2
 
     # threshold target
-    target[target >= target_thresh] = 1
-    target[target < target_thresh] = 0
+    target[target >= cfg.target_thresh_] = 1
+    target[target < cfg.target_thresh_] = 0
 
-    radii = np.arange(minrad, maxrad + 1, 1, dtype=int)
+    radii = np.arange(cfg.minrad_, cfg.maxrad_ + 1, 1, dtype=int)
     coords = []     # coordinates extracted from template matching
     corr = []       # correlation coefficient for coordinates set
     for r in radii:
@@ -78,8 +72,8 @@ def template_match_t(target, minrad, maxrad, longlat_thresh2, rad_thresh,
         cv2.circle(template, (r + rw + 1, r + rw + 1), r, 1, rw)
 
         # template match - result is nxn array of probabilities
-        result = match_template(target, template, pad_input=True)
-        index_r = np.where(result > template_thresh)
+        result = match_template(target[:,:,0], template, pad_input=True)
+        index_r = np.where(result > cfg.template_thresh_)
         coords_r = np.asarray(list(zip(*index_r)))
         corr_r = np.asarray(result[index_r])
 
@@ -100,7 +94,7 @@ def template_match_t(target, minrad, maxrad, longlat_thresh2, rad_thresh,
 
         dL = ((Long - lo)**2 + (Lat - la)**2) / minr**2
         dR = abs(Rad - r) / minr
-        index = (dR < rad_thresh) & (dL < longlat_thresh2)
+        index = (dR < cfg.rad_thresh_) & (dL < cfg.longlat_thresh2_)
         if len(np.where(index)[0]) > 1:
             # replace current coord with max match probability coord in
             # duplicate list
@@ -114,9 +108,7 @@ def template_match_t(target, minrad, maxrad, longlat_thresh2, rad_thresh,
     return coords
 
 
-def template_match_t2c(target, csv_coords, minrad, maxrad, longlat_thresh2,
-                       rad_thresh, template_thresh, target_thresh,
-                       rmv_oor_csvs=0):
+def template_match_t2c(target, csv_coords, rmv_oor_csvs=0):
     """Extracts crater coordinates (in pixels) from a CNN-predicted target and
     compares the resulting detections to the corresponding human-counted crater
     data.
@@ -167,21 +159,12 @@ def template_match_t2c(target, csv_coords, minrad, maxrad, longlat_thresh2,
         Fraction of craters with multiple csv matches.
     """
     # get coordinates from template matching
-    templ_coords = template_match_t(target, minrad, maxrad, longlat_thresh2,
-                                    rad_thresh, template_thresh, target_thresh)
+    templ_coords = template_match_t(target)
 
-    return template_match_c(templ_coords, target, csv_coords,
-                            minrad=minrad, maxrad=maxrad,
-                            longlat_thresh2=longlat_thresh2,
-                            rad_thresh=rad_thresh,
-                            template_thresh=template_thresh,
-                            target_thresh=target_thresh,
-                            rmv_oor_csvs=0)
+    return template_match_c(templ_coords, target, csv_coords, rmv_oor_csvs=0)
 
 
-def template_match_c(templ_coords, target, csv_coords, minrad, maxrad,
-                     longlat_thresh2, rad_thresh, template_thresh,
-                     target_thresh, rmv_oor_csvs=0):
+def template_match_c(templ_coords, target, csv_coords, rmv_oor_csvs=0):
     # find max detected crater radius
     maxr = 0
     if len(templ_coords) > 0:
@@ -198,7 +181,7 @@ def template_match_c(templ_coords, target, csv_coords, minrad, maxrad,
 
         dL = ((Long - lo)**2 + (Lat - la)**2) / minr**2
         dR = abs(Rad - r) / minr
-        index = (dR < rad_thresh) & (dL < longlat_thresh2)
+        index = (dR < cfg.rad_thresh_) & (dL < cfg.longlat_thresh2_)
         index_True = np.where(index)[0]
         N = len(index_True)
         if N >= 1:
@@ -217,7 +200,7 @@ def template_match_c(templ_coords, target, csv_coords, minrad, maxrad,
 
     if rmv_oor_csvs == 1:
         upper = 15
-        lower = minrad
+        lower = cfg.minrad_
         N_large_unmatched = len(np.where((csv_coords.T[2] > upper) |
                                          (csv_coords.T[2] < lower))[0])
         if N_large_unmatched < N_csv:
