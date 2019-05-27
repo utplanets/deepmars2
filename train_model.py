@@ -250,12 +250,12 @@ def train_and_test_model(Data, Craters, MP):
     # Callbacks
     now = time.strftime('%c')
     n_samples = 1000
-    save_folder = os.path.join(cfg.root_dir, 'YNET/models', now)
+    save_folder = os.path.join(cfg.input_root, 'data/YNET/models', now)
     os.mkdir(save_folder)
     save_name = save_folder + '/{epoch:02d}-{val_loss:.2f}.hdf5'
     save_model = ModelCheckpoint(os.path.join(cfg.root_dir,
                                                        save_name))
-    log_dir=os.path.join(cfg.root_dir, 'YNET/logs', now)
+    log_dir=os.path.join(cfg.input_root, 'data/YNET/logs', now)
     tensorboard = TensorBoard(log_dir, batch_size=bs, histogram_freq=1) 
     tbi_test = TensorBoardImage(log_dir)
     
@@ -463,7 +463,7 @@ def train_model(test, test_dataset, model, predictions):
     # Number of samples per epoch
     MP['per_epoch'] = 1000
 
-    MP['train_indices'] = list(np.arange(0, 40000, 1000))
+    MP['train_indices'] = list(np.arange(0, 1000, 1000))
     MP['dev_indices'] = [41000]#list(np.arange(161000, 206000, 4000))
     MP['test_indices'] = [42000]#list(np.arange(163000, 206000, 4000))
 
@@ -488,7 +488,7 @@ def train_model(test, test_dataset, model, predictions):
     MP['lambda'] = [1e-6]               # Weight regularization
     MP['dropout'] = [0.15]              # Dropout fraction
     
-    MP['prefix'] = 'ran2'
+    MP['prefix'] = 'ran'
     
     print(MP)
     get_models(MP)

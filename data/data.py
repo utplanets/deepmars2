@@ -6,7 +6,7 @@ import h5py
 import cv2
 from tqdm import tqdm
 from sklearn.preprocessing import MinMaxScaler
-from ..config import input_root, output_root
+from config import input_root, output_root
 
 
 def get_DEM(filename):
@@ -127,9 +127,10 @@ def get_craters_in_img(craters, lat, lon, box_size, dim, min_diameter_pix):
 
     pix_per_km = (dim / box_size) * 360 / (2 * np.pi * 3389.5)
     craters_in_img = craters[
-        (np.abs(craters["Lat"] - lat) < box_size)
-        & (np.abs(craters["Long"] - lon) < box_size / np.cos(np.deg2rad(lat)))
+        (np.abs(craters["Lat"] - lat) < box_size/2)
+        & (np.abs(craters["Long"] - lon) < box_size/2 / np.cos(np.deg2rad(lat)))
         & (craters["Diameter (km)"] * pix_per_km > min_diameter_pix)
+        & (craters["Diameter (km)"] * pix_per_km < box_size)
     ]
 
     return pd.DataFrame(craters_in_img)

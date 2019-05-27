@@ -6,5 +6,6 @@ rad_thresh_ = 1.0
 template_thresh_ = 0.5
 target_thresh_ = 0.1
 
+input_root = "/mnt/disks/rawdata"
+output_root = "/mnt/disks/rawdata"
 
-root_dir = "/disks/work/james/deepmars2"
