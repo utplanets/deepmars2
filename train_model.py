@@ -12,7 +12,7 @@ import h5py
 
 from keras.models import load_model
 from keras.callbacks import ModelCheckpoint, TensorBoard, Callback
-from deepmars2.YNET.model import build_YNET
+from deepmars2.YNET.model import build_YNET, get_weight, update_weight_callback
 import deepmars2.features.template_match_target as tmt
 import click
 import logging
@@ -258,6 +258,7 @@ def train_and_test_model(Data, Craters, MP):
     log_dir=os.path.join(cfg.root_dir, 'YNET/logs', now)
     tensorboard = TensorBoard(log_dir, batch_size=bs, histogram_freq=1) 
     tbi_test = TensorBoardImage(log_dir)
+    update_weight = update_weight_callback()
     
     val_sample = slice(0,10)
     model.fit_generator(generator_with_replacement(Data['train'][0],
@@ -266,7 +267,7 @@ def train_and_test_model(Data, Craters, MP):
                         steps_per_epoch=n_samples // bs,
                         verbose=1,
                         validation_data=([Data['dev'][0][val_sample,0], Data['dev'][0][val_sample,1]], Data['dev'][1][val_sample]),
-                        callbacks=[save_model, tensorboard, tbi_test],
+                        callbacks=[save_model, tensorboard, tbi_test, update_weight],
                         epochs=nb_epoch)
 
 
@@ -317,7 +318,8 @@ class TensorBoardImage(Callback):
                 tf.Summary.Value(tag='Image {:02d}'.format(i), image=images[i])
                 for i in range(len(images))] +
                 [tf.Summary.Value(tag='loss', simple_value=logs['loss']),
-                 tf.Summary.Value(tag='val_loss', simple_value=logs['val_loss'])])
+                 tf.Summary.Value(tag='val_loss', simple_value=logs['val_loss']),
+                 tf.Summary.Value(tag='weight', simple_value=get_weight())])
         writer = tf.summary.FileWriter(self.log_dir)
         writer.add_summary(summary, epoch)
         writer.close()

@@ -4,6 +4,45 @@ from keras.layers import Conv2D, MaxPooling2D, SeparableConv2D, UpSampling2D
 from keras.models import Model
 from keras.optimizers import Adam
 from keras.regularizers import l2  
+from keras import backend as K
+import tensorflow as tf
+from keras.backend.common import epsilon
+from keras.callbacks import Callback
+
+_weight=49
+
+
+def get_weight():
+    return _weight
+
+
+class update_weight_callback(Callback):
+    
+    def __init__(self):
+        super().__init__()
+
+    def on_epoch_end(self, epoch, logs=None):
+        global _weight
+        logs = logs or {}
+        
+        _weight = max(1, 49-(49/400)*epoch)
+        print('Updating weight: ', _weight)
+
+        return
+
+
+def weighted_cross_entropy_backend(target, output, weight):
+    # convert output to logits
+    _epsilon = tf.convert_to_tensor(epsilon(), dtype=output.dtype.base_dtype)
+    output = tf.clip_by_value(output, _epsilon, 1 - _epsilon)
+    output = tf.log(output / (1 - output))
+    
+    return tf.nn.weighted_cross_entropy_with_logits(target, output, weight)
+
+    
+def weighted_cross_entropy(y_true, y_pred, weight=_weight):
+    # higher weight = more emphasis placed on 1's in y_true
+    return K.mean(weighted_cross_entropy_backend(y_true, y_pred, weight), axis=-1)
 
 
 def build_YNET(depth, n_inputs, dim, kernel_size, n_kernels,
@@ -20,7 +59,8 @@ def build_YNET(depth, n_inputs, dim, kernel_size, n_kernels,
     
     model = Model(inputs, output)
     optimizer = Adam(lr=learn_rate)
-    model.compile(loss='binary_crossentropy', optimizer=optimizer)
+    #model.compile(loss='binary_crossentropy', optimizer=optimizer)
+    model.compile(loss=weighted_cross_entropy, optimizer = optimizer)
     model.summary()
 
     return model

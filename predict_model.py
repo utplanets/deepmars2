@@ -18,6 +18,7 @@ import config as cfg
 from tqdm import tqdm
 from pyproj import Transformer
 from cratertools import metric
+from deepmars2.YNET.model import weighted_cross_entropy
 
 # Reduce Tensorflow verbosity
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
@@ -25,7 +26,8 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
 def load_model(model=None):
     if isinstance(model, str):
-        model = km.load_model(model)
+        model = km.load_model(model, custom_objects={'weighted_cross_entropy':
+            weighted_cross_entropy})
     return model
 
 
@@ -333,7 +335,7 @@ def predict():
 @click.option("--index", type=int, default=None)
 @click.option("--prefix", default="ran2")
 @click.option("--output_prefix", default=None)
-@click.option("--model", default='/disks/work/james/deepmars2/YNET/models/Thu May 16 18:13:31 2019/464-0.07.hdf5')
+@click.option("--model", default='/disks/work/james/deepmars2/YNET/models/Tue May 28 14:59:13 2019/224-0.77.hdf5')
 def cnn_prediction(index, prefix, output_prefix, model):
     """ CNN predictions.
 
@@ -362,7 +364,7 @@ def cnn_prediction(index, prefix, output_prefix, model):
         ),
         dir_preds=os.path.join(
             cfg.root_dir,
-            "data/predictions/%s_preds%s.hdf5" % (output_prefix, indexstr),
+            "data/predictions2/%s_preds%s.hdf5" % (output_prefix, indexstr),
         ),
     )
 
@@ -423,17 +425,17 @@ def make_prediction(llt2, rt, index, prefix, start, stop, matches, model):
     # Location of where model predictions are/will be stored
     CP["dir_preds"] = os.path.join(
         cfg.root_dir,
-        "data/predictions/%s_preds%s.hdf5" % (CP["datatype"], indexstr),
+        "data/predictions2/%s_preds%s.hdf5" % (CP["datatype"], indexstr),
     )
     # Location of where final unique crater distribution will be stored
     CP["dir_result"] = os.path.join(
         cfg.root_dir,
-        "data/predictions/%s_craterdist%s.npy" % (CP["datatype"], indexstr),
+        "data/predictions2/%s_craterdist%s.npy" % (CP["datatype"], indexstr),
     )
     # Location of hdf file containing craters found
     CP["dir_craters"] = os.path.join(
         cfg.root_dir,
-        "data/predictions/%s_craterdist%s.hdf5" % (CP["datatype"], indexstr),
+        "data/predictions2/%s_craterdist%s.hdf5" % (CP["datatype"], indexstr),
     )
     # Location of hdf file containing craters found
     CP["dir_input_craters"] = os.path.join(
@@ -530,17 +532,17 @@ def global_statistics(llt2, rt, index, prefix, start, stop, matches, model):
     # Location of where model predictions are/will be stored
     CP["dir_preds"] = os.path.join(
         cfg.root_dir,
-        "data/predictions/%s_preds%s.hdf5" % (CP["datatype"], indexstr),
+        "data/predictions2/%s_preds%s.hdf5" % (CP["datatype"], indexstr),
     )
     # Location of where final unique crater distribution will be stored
     CP["dir_result"] = os.path.join(
         cfg.root_dir,
-        "data/predictions/%s_craterdist%s.npy" % (CP["datatype"], indexstr),
+        "data/predictions2/%s_craterdist%s.npy" % (CP["datatype"], indexstr),
     )
     # Location of hdf file containing craters found
     CP["dir_craters"] = os.path.join(
         cfg.root_dir,
-        "data/predictions/%s_craterdist%s.hdf5" % (CP["datatype"], indexstr),
+        "data/predictions2/%s_craterdist%s.hdf5" % (CP["datatype"], indexstr),
     )
     # Location of hdf file containing craters found
     CP["dir_input_craters"] = os.path.join(
