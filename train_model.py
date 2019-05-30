@@ -13,6 +13,7 @@ import h5py
 from keras.models import load_model
 from keras.callbacks import ModelCheckpoint, TensorBoard, Callback
 from deepmars2.YNET.model import build_YNET, get_weight, update_weight_callback
+from deepmars2.ResUNET.model import ResUNET
 import deepmars2.features.template_match_target as tmt
 import click
 import logging
@@ -48,8 +49,12 @@ def generator_with_replacement(data, target, batch_size=32):
             iaa.OneOf([iaa.Affine(rotate=0), iaa.Affine(rotate=90),
                        iaa.Affine(rotate=180), iaa.Affine(rotate=270)])])
     D = data.shape[0]
+
+    max_index = 5000
+    
     while True:
-        indices = [np.random.randint(D) for _ in range(batch_size)]
+        max_index = min(max_index+1, D)
+        indices = [np.random.randint(max_index) for _ in range(batch_size)]
         d, t = data[indices].copy(), target[indices].copy()
         
         DEM = d[:,0,...]
@@ -68,7 +73,8 @@ def generator_with_replacement(data, target, batch_size=32):
         IR = IR.transpose([2,0,1])[..., np.newaxis]
         t = t.transpose([2,0,1])[..., np.newaxis]
         
-        yield ([DEM,IR], t)
+#        yield ([DEM,IR], t)
+        yield (DEM, t)
         del d
         del t
 
@@ -243,31 +249,48 @@ def train_and_test_model(Data, Craters, MP):
     if MP["model"] is not None:
         model = load_model(MP["model"])
     else:
-        model = build_YNET(4, 2, dim, FL, n_filters, drop, learn_rate,
-                           lmbda=lmbda, activation_function='relu')
+#        model = build_YNET(4, 2, dim, FL, n_filters, drop, learn_rate,
+#                           lmbda=lmbda, activation_function='relu')
+        # taken from Zhang & Liu 2017
+        n_kernels = 64
+        kernel_size = 3
+        depth = 3
+        learn_rate = 0.001
+        model = ResUNET(n_kernels, kernel_size, depth, learn_rate)
 
     
     # Callbacks
     now = time.strftime('%c')
-    n_samples = 1000
-    save_folder = os.path.join(cfg.root_dir, 'YNET/models', now)
+    n_samples = 5000
+    save_folder = os.path.join(cfg.root_dir, 'ResUNET/models', now)
     os.mkdir(save_folder)
     save_name = save_folder + '/{epoch:02d}-{val_loss:.2f}.hdf5'
     save_model = ModelCheckpoint(os.path.join(cfg.root_dir, save_name),
                                  save_best_only=True)
-    log_dir=os.path.join(cfg.root_dir, 'YNET/logs', now)
-    tensorboard = TensorBoard(log_dir, batch_size=bs, histogram_freq=1) 
-    tbi_test = TensorBoardImage(log_dir)
+    #log_dir=os.path.join(cfg.root_dir, 'YNET/logs', now)
+    log_dir=os.path.join(cfg.root_dir, 'ResUNET/logs', now)
+    tensorboard = TensorBoard(log_dir, batch_size=bs) 
+    tbi_test = TensorBoardImage(log_dir, images=[Data['dev'][0][:,0], Data['dev'][1]])
     update_weight = update_weight_callback()
     
-    val_sample = slice(0,10)
+    #val_sample = slice(0,100)
+    #val_sample = slice(None)
+#    model.fit_generator(generator_with_replacement(Data['train'][0],
+#                                                   Data['train'][1],
+#                                                   batch_size=bs),
+#                        steps_per_epoch=n_samples // bs,
+#                        verbose=1,
+#                        validation_data=([Data['dev'][0][val_sample,0], Data['dev'][0][val_sample,1]], Data['dev'][1][val_sample]),
+#                        callbacks=[save_model, tensorboard, tbi_test, update_weight],
+#                        epochs=nb_epoch)
     model.fit_generator(generator_with_replacement(Data['train'][0],
                                                    Data['train'][1],
                                                    batch_size=bs),
                         steps_per_epoch=n_samples // bs,
                         verbose=1,
-                        validation_data=([Data['dev'][0][val_sample,0], Data['dev'][0][val_sample,1]], Data['dev'][1][val_sample]),
-                        callbacks=[save_model, tensorboard, tbi_test, update_weight],
+                        validation_data=generator_with_replacement(Data['dev'][0], Data['dev'][1], batch_size=bs),
+                        validation_steps=100,
+                        callbacks=[save_model, tensorboard, tbi_test],
                         epochs=nb_epoch)
 
 
@@ -292,23 +315,27 @@ def make_image(tensor):
 
 
 class TensorBoardImage(Callback):
-    def __init__(self, log_dir):
+    def __init__(self, log_dir, images):
         super().__init__() 
         self.log_dir = log_dir
+        self.images = images
 
     def on_epoch_end(self, epoch, logs=None):
         logs = logs or {}
-        data = self.validation_data
+        data = self.images # self.validation_data
+        #input_DEM = data[0]
+        #input_IR = data[1]
         input_DEM = data[0]
-        input_IR = data[1]
-        target_masks = data[2]
+#        target_masks = data[2]
+        target_masks = data[1]
         print('gerenating validation prediction images')
-        preds = self.model.predict([input_DEM, input_IR], batch_size=1)
+#        preds = self.model.predict([input_DEM, input_IR], batch_size=1)
+        preds = self.model.predict(input_DEM, batch_size=1)
         
         images = []
-        for i in tqdm(range(input_DEM.shape[0])):
+        for i in tqdm(range(10)):
             img = np.vstack([np.hstack([input_DEM[i,:,:,0],
-                                        input_IR[i,:,:,0]]),
+                                        input_DEM[i,:,:,0]]),
                              np.hstack([target_masks[i,:,:,0],
                                         preds[i,:,:,0]])
                             ])
@@ -459,7 +486,7 @@ def train_model(test, test_dataset, model, predictions):
     MP['dim'] = 256
 
     # Batch size: smaller values = less memory, less accurate gradient estimate
-    MP['bs'] = 7
+    MP['bs'] = 10
 
     # Number of training epochs.
     MP['epochs'] = 800
