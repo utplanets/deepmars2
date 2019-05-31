@@ -19,6 +19,7 @@ from tqdm import tqdm
 from pyproj import Transformer
 from cratertools import metric
 from deepmars2.YNET.model import weighted_cross_entropy
+from deepmars2.ResUNET.model import dice_loss
 
 # Reduce Tensorflow verbosity
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
@@ -26,8 +27,9 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
 def load_model(model=None):
     if isinstance(model, str):
-        model = km.load_model(model, custom_objects={'weighted_cross_entropy':
-            weighted_cross_entropy})
+#        model = km.load_model(model, custom_objects={'weighted_cross_entropy':
+#            weighted_cross_entropy})
+        model = km.load_model(model, custom_objects={'dice_loss': dice_loss})
     return model
 
 
@@ -75,8 +77,8 @@ def get_model_preds(CP):
 
     model = load_model(CP["dir_model"])
     logger.info("Making prediction on %d images" % n_imgs)
-    preds = model.predict([Data[dtype][0], Data[dtype][1]], batch_size=10)
-    #preds = model.predict(Data[dtype][0], batch_size=10)[..., np.newaxis]
+    #preds = model.predict([Data[dtype][0], Data[dtype][1]], batch_size=10)
+    preds = model.predict(Data[dtype][0], batch_size=10)
     logger.info("Finished prediction on %d images" % n_imgs)
     # save
     h5f = h5py.File(CP["dir_preds"], "w")
@@ -335,7 +337,7 @@ def predict():
 @click.option("--index", type=int, default=None)
 @click.option("--prefix", default="ran2")
 @click.option("--output_prefix", default=None)
-@click.option("--model", default='/disks/work/james/deepmars2/YNET/models/Tue May 28 14:59:13 2019/224-0.77.hdf5')
+@click.option("--model", default='/disks/work/james/deepmars2/ResUNET/models/Thu May 30 17:49:54 2019/99-0.56.hdf5')
 def cnn_prediction(index, prefix, output_prefix, model):
     """ CNN predictions.
 

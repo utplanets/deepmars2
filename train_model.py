@@ -254,9 +254,10 @@ def train_and_test_model(Data, Craters, MP):
         # taken from Zhang & Liu 2017
         n_kernels = 64
         kernel_size = 3
-        depth = 3
-        learn_rate = 0.001
-        model = ResUNET(n_kernels, kernel_size, depth, learn_rate)
+        depth = 4
+        learn_rate = 0.0001
+        dropout = 0.5
+        model = ResUNET(n_kernels, kernel_size, depth, learn_rate, dropout)
 
     
     # Callbacks
@@ -334,8 +335,9 @@ class TensorBoardImage(Callback):
         
         images = []
         for i in tqdm(range(10)):
+            normed = preds[i,:,:,0] / max(preds[i,:,:,0].max(), 1e-6)
             img = np.vstack([np.hstack([input_DEM[i,:,:,0],
-                                        input_DEM[i,:,:,0]]),
+                                        normed]),
                              np.hstack([target_masks[i,:,:,0],
                                         preds[i,:,:,0]])
                             ])
