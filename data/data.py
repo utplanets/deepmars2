@@ -6,7 +6,7 @@ import h5py
 import cv2
 from tqdm import tqdm
 from sklearn.preprocessing import MinMaxScaler
-from ..config import input_root, output_root
+from deepmars2.config import root_dir, minrad_, maxrad_
 
 
 def get_DEM(filename):
@@ -71,8 +71,8 @@ def fill_ortho_grid(lat, lon, box_size, img, dim=256):
     return img[pixel_coords[0], pixel_coords[1]]
 
 
-def make_mask(lat, lon, craters, box_size, dim, ring_size):
-
+def make_mask(lat, lon, craters, box_size, dim, ring_size, minrad=minrad_,
+              maxrad=maxrad_):
     mask = np.zeros(shape=(dim, dim))
 
     if craters.empty:
@@ -109,7 +109,7 @@ def make_mask(lat, lon, craters, box_size, dim, ring_size):
             255,
             ring_size,
         )
-
+    
     return mask, craters
 
 
@@ -145,13 +145,15 @@ def gen_dataset(
     dim=256,
     min_box=2,
     max_box=30,
-    min_diameter_pix=4,
+    min_diameter_pix=1,
     ring_size=1,
+    minrad=minrad_,
+    maxrad=maxrad_
 ):
 
     imgs_h5 = h5py.File(
         ("{}/data/processed/{}_images_{:05d}.hdf5").format(
-            output_root, series_prefix, start_index
+            root_dir, series_prefix, start_index
         ),
         "w",
     )
@@ -161,8 +163,9 @@ def gen_dataset(
     imgs_h5_DEM.attrs["definition"] = "Input DEM dataset."
     imgs_h5_IR = imgs_h5.create_dataset("input_IR", (amount, dim, dim), dtype="float32")
     imgs_h5_IR.attrs["definition"] = "Input IR dataset."
+    n_diam = 2*(maxrad-minrad)
     imgs_h5_targets = imgs_h5.create_dataset(
-        "target_masks", (amount, dim, dim), dtype="float32"
+        "target_masks", (amount, dim, dim, n_diam), dtype="float32"
     )
     imgs_h5_targets.attrs["definition"] = "Target mask dataset."
     imgs_h5_cll = imgs_h5.create_dataset(
@@ -173,7 +176,7 @@ def gen_dataset(
     imgs_h5_box_size.attrs["definition"] = "Box size"
     craters_h5 = pd.HDFStore(
         ("{}/data/processed/{}_craters_{:05d}.hdf5").format(
-            output_root, series_prefix, start_index
+            root_dir, series_prefix, start_index
         )
     )
 
@@ -192,7 +195,7 @@ def gen_dataset(
         ortho_DEM = fill_ortho_grid(lat, lon, box_size, DEM)
         ortho_IR = fill_ortho_grid(lat, lon, box_size, IR)
 
-        ortho_mask = normalize(ortho_mask)
+        #ortho_mask = normalize(ortho_mask)
         ortho_DEM = normalize(ortho_DEM)
         ortho_IR = normalize(ortho_IR)
 
@@ -212,9 +215,9 @@ def gen_dataset(
     craters_h5.close()
 
 
-_dem_filename = input_root + "/data/raw/Mars_HRSC_MOLA_BlendDEM_Global_200mp_v2.tif"
-_ir_filename = input_root + "/data/raw/Mars_THEMIS_scaled.tif"
-_crater_filename = input_root + "/data/raw/RobbinsCraters_20121016.tsv"
+_dem_filename = root_dir + "/data/raw/Mars_HRSC_MOLA_BlendDEM_Global_200mp_v2.tif"
+_ir_filename = root_dir + "/data/raw/Mars_THEMIS_scaled.tif"
+_crater_filename = root_dir + "/data/raw/RobbinsCraters_20121016.tsv"
 
 
 def main(
@@ -232,10 +235,10 @@ def main(
 
     print("Generating dataset", flush=True)
 
-    for i in range(50):
+    for i in range(1):
         start_index = i * 1000
         print("\n{:05d}".format(start_index), flush=True)
-        gen_dataset(DEM, IR, craters, "ran", amount=1000, start_index=start_index)
+        gen_dataset(DEM, IR, craters, "ran3", amount=1000, start_index=start_index)
 
 
 if __name__=="__main__":

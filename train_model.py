@@ -25,6 +25,7 @@ from keras.backend.tensorflow_backend import set_session
 from imgaug import augmenters as iaa
 from joblib import Parallel, delayed
 import config as cfg
+import pickle
 
 # Reduce Tensorflow verbosity
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
@@ -43,7 +44,7 @@ def dl():
     logging.basicConfig(level=logging.INFO, format=log_fmt)
 
 
-def generator_with_replacement(data, target, batch_size=32):
+def generator_with_replacement(data, target, batch_size=10):
     augmentation = iaa.Sequential([
             iaa.Fliplr(0.5),
             iaa.OneOf([iaa.Affine(rotate=0), iaa.Affine(rotate=90),
@@ -78,6 +79,63 @@ def generator_with_replacement(data, target, batch_size=32):
         del d
         del t
 
+
+def generator_with_replacement_2(data, file_indices, batch_size=10):
+    craters = [None]*1000*len(file_indices)
+    max_index = data.shape[0]
+    print('Loading craters.')
+    for i in tqdm(range(len(file_indices))):
+        pickle_name = os.path.join(cfg.root_dir,
+                'data/processed/ran2_craters_{:05d}.pkl'.format(file_indices[i]))
+        if os.path.exists(pickle_name):
+            craters_np = pickle.load(open(pickle_name,'rb'))
+            for j in range(1000):
+                craters[i*1000+j] = craters_np[j]
+
+        else:        
+            craters_h5 = pd.HDFStore(os.path.join(cfg.root_dir,
+                'data/processed/ran2_craters_{:05d}.hdf5'.format(file_indices[i])))
+            for j in range(1000):
+                try:
+                    key = 'img_{:05d}'.format(file_indices[i] + j)
+                    craters_pd = craters_h5[key]
+                    craters_np = craters_pd[['x (pix)', 'y (pix)', 'Diameter (pix)']].values
+                    craters_np = craters_np[np.where((craters_np[:,0] >= 0) * 
+                                                 (craters_np[:,0] < 256) * 
+                                                 (craters_np[:,1] >= 0) * 
+                                                 (craters_np[:,1] < 256) * 
+                                                 (craters_np[:,2] >= 2*cfg.minrad_) * 
+                                                 (craters_np[:,2] < 2*cfg.maxrad_))]
+                    craters_np[:,2] -= 2*cfg.minrad_
+                    craters[i*1000+j] = craters_np
+                except:
+                    craters[i*1000+j] = np.empty([3,0])
+            craters_h5.close()
+            pickle.dump(craters[i*1000:i*1000+1000],open(pickle_name,'wb'))
+    
+    while True:
+        indices = [np.random.randint(max_index) for _ in range(batch_size)]
+        DEM = data[indices,0,...].copy()
+        target_shape = DEM.shape[:-1]# + (2*(cfg.maxrad_ - cfg.minrad_),)
+        target = np.zeros(shape=target_shape)
+        #print(target.shape)
+        for i in range(batch_size):
+            index = np.zeros(craters[indices[i]].shape[0],dtype=int)+i
+        #    print((index,*craters[indices[i]].T))
+            #print(target.shape, craters[indices[i]].shape, i, j)
+            #import sys
+            #sys.exit()
+            try:
+                target[(index,*craters[indices[i]][:,:-1].T)] = craters[indices[i]][:,-1].T
+            except:
+                pass
+            
+        target = target[:,:,:,np.newaxis]
+        #import pickle
+        #pickle.dump([[craters[i] for i in indices], target,DEM], open("pickle2.pickle",'wb'))
+        #import sys
+        #sys.exit()
+        yield (DEM, target)
 
 def t2c(pred, csv, i):
     return np.hstack([i,
@@ -254,10 +312,14 @@ def train_and_test_model(Data, Craters, MP):
         # taken from Zhang & Liu 2017
         n_kernels = 64
         kernel_size = 3
-        depth = 4
+        depth = 3
         learn_rate = 0.0001
         dropout = 0.5
-        model = ResUNET(n_kernels, kernel_size, depth, learn_rate, dropout)
+        #output_length = 2*(cfg.maxrad_ - cfg.minrad_)
+        output_length = 1
+        #model = ResUNET(n_kernels, kernel_size, depth, learn_rate, dropout)
+        model = ResUNET(n_kernels, kernel_size, depth, learn_rate, dropout,
+                        output_length=output_length)
 
     
     # Callbacks
@@ -290,9 +352,20 @@ def train_and_test_model(Data, Craters, MP):
                         steps_per_epoch=n_samples // bs,
                         verbose=1,
                         validation_data=generator_with_replacement(Data['dev'][0], Data['dev'][1], batch_size=bs),
-                        validation_steps=100,
+                        validation_steps=300,
                         callbacks=[save_model, tensorboard, tbi_test],
                         epochs=nb_epoch)
+#    model.fit_generator(generator_with_replacement_2(Data['train'][0],
+#                                                     MP['train_indices'],
+#                                                     batch_size=bs),
+#                        steps_per_epoch=n_samples // bs,
+#                        verbose=1,
+#                        validation_data=generator_with_replacement_2(Data['dev'][0],
+#                                                                     MP['dev_indices'],
+#                                                                     batch_size=bs),
+#                        validation_steps=100,
+#                        callbacks=[save_model, tensorboard],
+#                        epochs=nb_epoch)
 
 
 def make_image(tensor):
@@ -390,8 +463,8 @@ def get_models(MP):
                 npic = npic + len(res0[-1])
                 res1.append(files[-1]["target_masks"][:].astype('float32'))
                 files[-1].close()
-                craters.append(pd.HDFStore(os.path.join(
-                    dir, prefix + "_craters_{0:05d}.hdf5".format(n)), 'r'))
+#                craters.append(pd.HDFStore(os.path.join(
+#                    dir, prefix + "_craters_{0:05d}.hdf5".format(n)), 'r'))
             res0 = np.vstack(res0).transpose([1,0,2,3])
             res1 = np.vstack(res1)
         return files, res0, res1, npic, craters, images
@@ -497,8 +570,8 @@ def train_model(test, test_dataset, model, predictions):
     MP['per_epoch'] = 1000
 
     MP['train_indices'] = list(np.arange(0, 40000, 1000))
-    MP['dev_indices'] = [41000]#list(np.arange(161000, 206000, 4000))
-    MP['test_indices'] = [42000]#list(np.arange(163000, 206000, 4000))
+    MP['dev_indices'] = [41000, 42000, 43000, 44000, 45000]#list(np.arange(161000, 206000, 4000))
+    MP['test_indices'] = [46000, 47000, 48000, 49000]#list(np.arange(163000, 206000, 4000))
 
     MP['n_train'] = len(MP['train_indices']) * 1000
     MP['n_dev'] = len(MP['dev_indices']) * 1000
