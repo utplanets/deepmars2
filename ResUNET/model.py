@@ -4,6 +4,7 @@ from keras.models import Model
 from keras.optimizers import Adam
 from keras import backend as K
 
+
 def dice_loss(y_true, y_pred):
     g = K.batch_flatten(y_true)
     p = K.batch_flatten(y_pred)
@@ -15,7 +16,12 @@ def dice_loss(y_true, y_pred):
     return K.transpose(K.mean(DL))
 
 
-def EncoderBlock(input_layer, n_kernels, kernel_size, block_number, dropout):
+def EncoderBlock(input_layer,
+                 n_kernels,
+                 kernel_size,
+                 block_number,
+                 dropout):
+    
     base_name = 'Encoder_{}_'.format(block_number)
     
     # Shortcut Branch
@@ -23,11 +29,11 @@ def EncoderBlock(input_layer, n_kernels, kernel_size, block_number, dropout):
                             strides=(2,2), name=base_name + 'Skip')(input_layer)
     
     # Convolution Branch
-    #tmp_layer = BatchNormalization(name=base_name + 'BatchNorm_1')(input_layer)
+    tmp_layer = BatchNormalization(name=base_name + 'BatchNorm_1')(input_layer)
     tmp_layer = Activation('relu', name=base_name + 'ReLU_1')(input_layer)
     tmp_layer = Conv2D(n_kernels, kernel_size, padding='same',
                        strides=(2,2), name=base_name + 'Conv_1')(tmp_layer)
-    #tmp_layer = BatchNormalization(name=base_name + 'BatchNorm_2')(tmp_layer)
+    tmp_layer = BatchNormalization(name=base_name + 'BatchNorm_2')(tmp_layer)
     tmp_layer = Activation('relu', name=base_name + 'ReLU_2')(tmp_layer)
     tmp_layer = Conv2D(n_kernels, kernel_size, padding='same',
                        name=base_name + 'Conv_2')(tmp_layer)
@@ -39,15 +45,19 @@ def EncoderBlock(input_layer, n_kernels, kernel_size, block_number, dropout):
     return output_layer
 
 
-def BridgeBlock(input_layer, n_kernels, kernel_size, dropout):
+def BridgeBlock(input_layer,
+                n_kernels,
+                kernel_size,
+                dropout):
+    
     base_name = 'Bridge_'
     
     # Convolution Branch
-    #tmp_layer = BatchNormalization(name=base_name + 'BatchNorm_1')(input_layer)
+    tmp_layer = BatchNormalization(name=base_name + 'BatchNorm_1')(input_layer)
     tmp_layer = Activation('relu', name=base_name + 'ReLU_1')(input_layer)
     tmp_layer = Conv2D(n_kernels, kernel_size, padding='same',
                        strides=(2,2), name=base_name + 'Conv_1')(tmp_layer)
-    #tmp_layer = BatchNormalization(name=base_name + 'BatchNorm_2')(tmp_layer)
+    tmp_layer = BatchNormalization(name=base_name + 'BatchNorm_2')(tmp_layer)
     tmp_layer = Activation('relu', name=base_name + 'ReLU_2')(tmp_layer)
     tmp_layer = Conv2D(n_kernels, kernel_size, padding='same',
                        name=base_name + 'Conv_2')(tmp_layer)
@@ -65,8 +75,13 @@ def BridgeBlock(input_layer, n_kernels, kernel_size, dropout):
     return output_layer
 
 
-def DecoderBlock(input_layer, carry_layer, n_kernels, kernel_size,
-                 block_number, dropout):
+def DecoderBlock(input_layer,
+                 carry_layer,
+                 n_kernels,
+                 kernel_size,
+                 block_number,
+                 dropout):
+    
     base_name = 'Decoder_{}_'.format(block_number)
     
     # Merging inputs and carries
@@ -74,11 +89,11 @@ def DecoderBlock(input_layer, carry_layer, n_kernels, kernel_size,
                                                                carry_layer])
     
     # Convolution Branch
-    #tmp_layer = BatchNormalization(name=base_name + 'BatchNorm_1')(input_layer)
+    tmp_layer = BatchNormalization(name=base_name + 'BatchNorm_1')(input_layer)
     tmp_layer = Activation('relu', name=base_name + 'ReLU_1')(input_layer)
     tmp_layer = Conv2D(n_kernels, kernel_size, padding='same',
                        name=base_name + 'Conv_1')(tmp_layer)
-    #tmp_layer = BatchNormalization(name=base_name + 'BatchNorm_2')(tmp_layer)
+    tmp_layer = BatchNormalization(name=base_name + 'BatchNorm_2')(tmp_layer)
     tmp_layer = Activation('relu', name=base_name + 'ReLU_2')(tmp_layer)
     tmp_layer = Conv2D(n_kernels, kernel_size, padding='same',
                        name=base_name + 'Conv_2')(tmp_layer)
@@ -95,7 +110,13 @@ def DecoderBlock(input_layer, carry_layer, n_kernels, kernel_size,
     return output_layer
 
 
-def ResUNET(n_kernels, kernel_size, depth, learn_rate, dropout, dim=256):
+def ResUNET(n_kernels,
+            kernel_size,
+            depth,
+            learn_rate,
+            dropout, dim=256,
+            output_length=1):
+    
     input_layer = Input(shape=(dim,dim,1), name='Input')
     tmp_layer = Conv2D(n_kernels, kernel_size, padding='same',
                        name='Input_Conv')(input_layer)
@@ -105,21 +126,24 @@ def ResUNET(n_kernels, kernel_size, depth, learn_rate, dropout, dim=256):
                                                            output_layer])
     output_layer = Conv2D(n_kernels, kernel_size, padding='same',
                           name='Output_Conv_1')(output_layer)    
-    output_layer = Conv2D(1, 1, padding='same',
+    output_layer = Conv2D(output_length, 1, padding='same',
                           name='Output_Conv_2')(output_layer)
     output_layer = Activation('sigmoid', name='Sigmoid')(output_layer)
     
     model = Model(input_layer, output_layer)
     optimizer = Adam(lr=learn_rate)
-    #model.compile(loss='mean_squared_error', optimizer = optimizer)
     model.compile(loss=dice_loss, optimizer=optimizer)
     model.summary()
- #   from keras.utils import plot_model
- #   plot_model(model, to_file='model.png')
+
     return model
 
 
-def ResUNET_helper(input_layer, n_kernels, kernel_size, depth, dropout):
+def ResUNET_helper(input_layer,
+                   n_kernels,
+                   kernel_size,
+                   depth,
+                   dropout):
+    
     if depth == 0:
         return BridgeBlock(input_layer, n_kernels, kernel_size, dropout)
     

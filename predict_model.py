@@ -634,9 +634,6 @@ def make_global_statistics(CP):
     robbins_unique = metric.rep_filter_unique_craters(robbins_filtered,
                                                       *cols)[0]
     
-    # TODO: check if this works
-    my_craters['Diameter (km)'] *= 1.125
-    
     matched_craters = metric.kn_match_craters(my_craters, robbins_unique,
                                               *cols)[0]
     
