@@ -5,10 +5,12 @@ maxrad_ = 40
 #rad_thresh_ = 1.0
 longlat_thresh2_ = 0.5
 rad_thresh_ = 0.25
-#template_thresh_ = 0.425
-#target_thresh_ = 0.3
-template_thresh_ = 0.25
-target_thresh_ = 0.2
+template_thresh_ = 0.425
+target_thresh_ = 0.3
+#template_thresh_ = 0.2
+#target_thresh_ = 0.2
+#template_thresh_ = 0.75
+#target_thresh_ = 0.2
 
 
 root_dir = "/disks/work/james/deepmars2"

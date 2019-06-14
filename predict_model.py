@@ -24,6 +24,7 @@ from deepmars2.ResUNET.model import dice_loss
 import skimage.feature
 import pickle
 from sklearn.cluster import DBSCAN
+from scipy.ndimage import convolve
 
 # Reduce Tensorflow verbosity
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
@@ -229,10 +230,11 @@ def new_match_template(pred):
     corrs = np.empty([0,1]) # correlation coefficients for candidate craters
     # template matching
     for r in radii:
-        n = r + rw + 1
-        template = np.zeros((2*n, 2*n))
-        cv2.circle(template, (n,n), r, 1, rw)
+        n = r + rw
+        template = np.zeros((2*n-1, 2*n-1))
+        cv2.circle(template, (n-1,n-1), r, 1, rw)
         heat_map = skimage.feature.match_template(thresholded, template, pad_input=True)
+        #heat_map = convolve(thresholded, template) / np.sum(template)
         y, x = np.where(heat_map > cfg.template_thresh_)
         coords = np.vstack([coords, np.vstack([x, y, np.ones_like(x)*r]).T])
         corr = heat_map[y, x][:, np.newaxis]
@@ -262,92 +264,8 @@ def new_match_template(pred):
     
     
 
-def extract_unique_craters(
-    CP, index
-):
-    """Top level function that extracts craters from model predictions,
-    converts craters from pixel to real (degree, km) coordinates, and filters
-    out duplicate detections across images.
-
-    Parameters
-    ----------
-    CP : dict
-        Crater Parameters needed to run the code.
-    craters_unique : array
-        Empty master array of unique crater tuples in the form
-        (long, lat, radius).
-
-    Returns
-    -------
-    craters_unique : array
-        Filled master array of unique crater tuples.
-    """
-    logger = logging.getLogger(__name__)
-    
-    # Load model preds
-    preds = h5py.File(CP["dir_preds"], "r")[CP["datatype"]]
-    logger.info("Loaded model predictions")
-
-    # need for long/lat bounds
-    P = h5py.File(CP["dir_data"], 'r')
-
-    N_matches_tot = 0
-
-    craters_h5 = pd.HDFStore(CP["dir_craters"], "w")
-    
-    res = Parallel(n_jobs=16, verbose=0)(
-                delayed(new_match_template)(preds[i])
-                for i in tqdm(range(1000)))
-    
-    craters_unique = np.empty([0, 3])
-    
-    for i in range(1000):
-        coords = res[i]
-
-        img = 'img_{:05d}'.format(index + i)
-        
-        # convert, add to master dist
-        if len(coords) > 0:
-            new_craters_unique = long_lat_rad_km_from_pix(coords, P['box_size'][i], P['central_lat_lon'][i])
-            N_matches_tot += len(coords)
-
-            # Only add unique (non-duplicate) craters
-            if len(craters_unique) > 0:
-                craters_unique = add_unique_craters(
-                    new_craters_unique, craters_unique, CP["llt2"], CP["rt"]
-                )
-            else:
-                craters_unique = np.concatenate((craters_unique, new_craters_unique))
-            data = np.hstack(
-                [
-                    new_craters_unique * np.array([1, 1, 2])[None, :],
-                    coords * np.array([1, 1, 2])[None, :],
-                ]
-            )
-            df = pd.DataFrame(
-                data,
-                columns=["Long", "Lat", "Diameter (km)", "x", "y", "Diameter (pix)"],
-            )
-            craters_h5[img] = df[
-                ["Lat", "Long", "Diameter (km)", "x", "y", "Diameter (pix)"]
-            ]
-            craters_h5.flush()
-
-    logger.info(
-        "Saving to %s with %d 6 craters" % (CP["dir_result"], len(craters_unique))
-    )
-    np.save(CP["dir_result"], craters_unique)
-    alldata = craters_unique * np.array([1, 1, 2])[None, :]
-    df = pd.DataFrame(alldata, columns=["Long", "Lat", "Diameter (km)"])
-    craters_h5["all"] = df[["Lat", "Long", "Diameter (km)"]]
-    craters_h5.flush()
-    craters_h5.close()
-
-    return craters_unique
-
-
 #def extract_unique_craters(
-#    CP, index=0, start=0, stop=-1, withmatches=False
+#    CP, index
 #):
 #    """Top level function that extracts craters from model predictions,
 #    converts craters from pixel to real (degree, km) coordinates, and filters
@@ -366,53 +284,28 @@ def extract_unique_craters(
 #    craters_unique : array
 #        Filled master array of unique crater tuples.
 #    """
-#    craters_unique = np.empty([0, 3])
 #    logger = logging.getLogger(__name__)
-#    # Load/generate model preds
-#    try:
-#        preds = h5py.File(CP["dir_preds"], "r")[CP["datatype"]]
-#        logger.info("Loaded model predictions successfully")
-#    except:
-#        logger.info("Couldnt load model predictions, generating")
-#        preds = get_model_preds(CP)
+#    
+#    # Load model preds
+#    preds = h5py.File(CP["dir_preds"], "r")[CP["datatype"]]
+#    logger.info("Loaded model predictions")
 #
 #    # need for long/lat bounds
 #    P = h5py.File(CP["dir_data"], 'r')
 #
-#    dim = (float(CP["dim"]), float(CP["dim"]))
-#
 #    N_matches_tot = 0
-#    if start < 0:
-#        start = 0
-#    if stop < 0:
-#        stop = P["input_DEM"].shape[0]
 #
-#    start = np.clip(start, 0, P["input_DEM"].shape[0] - 1)
-#    stop = np.clip(stop, 1, P["input_DEM"].shape[0])
 #    craters_h5 = pd.HDFStore(CP["dir_craters"], "w")
-#
-##    csvs = []
-#    if withmatches:
-#        craters = pd.HDFStore(CP["dir_input_craters"], "r")
-#        matches = []
-#
-#    full_craters = dict()
-#    if withmatches:
-#        for i in range(start, stop):
-#            img = 'img_{:05d}'.format(index + i)
-#            if img in craters:
-#                full_craters[img] = craters[img]
+#    
 #    res = Parallel(n_jobs=16, verbose=0)(
-#        delayed(match_template)(
-#            preds[i], full_craters, i, index, dim, withmatches=withmatches
-#        )
-#        for i in tqdm(range(start, stop))
-#    )
+#                delayed(new_match_template)(preds[i])
+#                for i in tqdm(range(1000)))
+#    
+#    craters_unique = np.empty([0, 3])
+#    
+#    for i in range(1000):
+#        coords = res[i]
 #
-#    for i in range(start, stop):
-#        coords, df2 = res[i]
-#        if withmatches:
-#            matches.append(df2)
 #        img = 'img_{:05d}'.format(index + i)
 #        
 #        # convert, add to master dist
@@ -449,13 +342,122 @@ def extract_unique_craters(
 #    alldata = craters_unique * np.array([1, 1, 2])[None, :]
 #    df = pd.DataFrame(alldata, columns=["Long", "Lat", "Diameter (km)"])
 #    craters_h5["all"] = df[["Lat", "Long", "Diameter (km)"]]
-#    if withmatches:
-#        craters_h5["matches"] = pd.concat(matches)
-#        craters.close()
 #    craters_h5.flush()
 #    craters_h5.close()
 #
 #    return craters_unique
+
+
+def extract_unique_craters(
+    CP, index=0, start=0, stop=-1, withmatches=False
+):
+    """Top level function that extracts craters from model predictions,
+    converts craters from pixel to real (degree, km) coordinates, and filters
+    out duplicate detections across images.
+
+    Parameters
+    ----------
+    CP : dict
+        Crater Parameters needed to run the code.
+    craters_unique : array
+        Empty master array of unique crater tuples in the form
+        (long, lat, radius).
+
+    Returns
+    -------
+    craters_unique : array
+        Filled master array of unique crater tuples.
+    """
+    craters_unique = np.empty([0, 3])
+    logger = logging.getLogger(__name__)
+    # Load/generate model preds
+    try:
+        preds = h5py.File(CP["dir_preds"], "r")[CP["datatype"]]
+        logger.info("Loaded model predictions successfully")
+    except:
+        logger.info("Couldnt load model predictions, generating")
+        preds = get_model_preds(CP)
+
+    # need for long/lat bounds
+    P = h5py.File(CP["dir_data"], 'r')
+
+    dim = (float(CP["dim"]), float(CP["dim"]))
+
+    N_matches_tot = 0
+    if start < 0:
+        start = 0
+    if stop < 0:
+        stop = P["input_DEM"].shape[0]
+
+    start = np.clip(start, 0, P["input_DEM"].shape[0] - 1)
+    stop = np.clip(stop, 1, P["input_DEM"].shape[0])
+    craters_h5 = pd.HDFStore(CP["dir_craters"], "w")
+
+#    csvs = []
+    if withmatches:
+        craters = pd.HDFStore(CP["dir_input_craters"], "r")
+        matches = []
+
+    full_craters = dict()
+    if withmatches:
+        for i in range(start, stop):
+            img = 'img_{:05d}'.format(index + i)
+            if img in craters:
+                full_craters[img] = craters[img]
+    res = Parallel(n_jobs=16, verbose=0)(
+        delayed(match_template)(
+            preds[i], full_craters, i, index, dim, withmatches=withmatches
+        )
+        for i in tqdm(range(start, stop))
+    )
+
+    for i in range(start, stop):
+        coords, df2 = res[i]
+        if withmatches:
+            matches.append(df2)
+        img = 'img_{:05d}'.format(index + i)
+        
+        # convert, add to master dist
+        if len(coords) > 0:
+            new_craters_unique = long_lat_rad_km_from_pix(coords, P['box_size'][i], P['central_lat_lon'][i])
+            N_matches_tot += len(coords)
+
+            # Only add unique (non-duplicate) craters
+            if len(craters_unique) > 0:
+                craters_unique = add_unique_craters(
+                    new_craters_unique, craters_unique, CP["llt2"], CP["rt"]
+                )
+            else:
+                craters_unique = np.concatenate((craters_unique, new_craters_unique))
+            data = np.hstack(
+                [
+                    new_craters_unique * np.array([1, 1, 2])[None, :],
+                    coords * np.array([1, 1, 2])[None, :],
+                ]
+            )
+            df = pd.DataFrame(
+                data,
+                columns=["Long", "Lat", "Diameter (km)", "x", "y", "Diameter (pix)"],
+            )
+            craters_h5[img] = df[
+                ["Lat", "Long", "Diameter (km)", "x", "y", "Diameter (pix)"]
+            ]
+            craters_h5.flush()
+
+    logger.info(
+        "Saving to %s with %d 6 craters" % (CP["dir_result"], len(craters_unique))
+    )
+    np.save(CP["dir_result"], craters_unique)
+    alldata = craters_unique * np.array([1, 1, 2])[None, :]
+    df = pd.DataFrame(alldata, columns=["Long", "Lat", "Diameter (km)"])
+    craters_h5["all"] = df[["Lat", "Long", "Diameter (km)"]]
+    if withmatches:
+        craters_h5["matches"] = pd.concat(matches)
+        craters.close()
+    craters_h5.flush()
+    craters_h5.close()
+
+    return craters_unique
 
 
 @click.group()
@@ -761,6 +763,9 @@ def make_global_statistics(CP):
     print("Number of raw craters = {}".format(len(robbins_filtered)))
     robbins_unique = metric.rep_filter_unique_craters(robbins_filtered,
                                                       *cols)[0]
+    
+    # TODO: remove bias so this isn't necessary
+    my_craters['Diameter (km)'] *= 1.135
     
     matched_craters = metric.kn_match_craters(my_craters, robbins_unique,
                                               *cols)[0]
