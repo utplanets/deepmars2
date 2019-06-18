@@ -109,6 +109,12 @@ venv.bak/
 *.tsv
 *.tif
 *.pkl
+data/predictions/
+data/predictions2/
+post_processing_net/
 
 # output images
 images/
+
+# logs
+*/logs/
