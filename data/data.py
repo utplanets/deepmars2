@@ -8,7 +8,7 @@ from tqdm import tqdm
 from sklearn.preprocessing import MinMaxScaler
 import deepmars2.config as cfg
 
-_R_Mars = 3389.5 # radius of Mars in km
+_R_Mars = cfg.R_planet # radius of Mars in km
 
 def get_DEM(filename):
     """Reads the DEM from a large tiff file.
@@ -314,12 +314,56 @@ def lld_to_xyd(lat, lon, d, lat_0, lon_0, box_size, dim=256, return_ints=True):
         return x, y, d
 
 
+def get_min_width(box_size, lat):
+    return box_size / np.cos(np.deg2rad(lat))
+
+
+def systematic_pass(box_sizes):
+    coords = []
+    
+    for box_size in box_sizes:
+        box_size = box_size / 2 # for overlap
+        n_lats = int(np.ceil(180 / box_size))
+        lats = np.linspace(-90, 90, n_lats + 1)
+        lats = lats[:-1] + np.diff(lats) / 2
+        
+        for lat in lats:
+            width = get_min_width(box_size, lat)
+            n_lons = int(np.ceil(360 / width))
+            lons = np.linspace(-180, 180, n_lons + 1)
+            lons = lons[:-1] + np.diff(lons) / 2
+            
+            for lon in lons:
+                coords.append([lat, lon, box_size * 2]) # rescale box_size
+    
+    print('{} images'.format(len(coords)))
+    
+    return np.array(coords)
+            
+
+def make_images(craters, lat, lon, box_size, dim, DEM, IR, ring_size):
+    craters_in_img = get_craters_in_img(craters, lat, lon, box_size, dim)
+    
+    ortho_mask, craters_xy = make_mask(craters_in_img, dim, ring_size)
+    ortho_DEM = fill_ortho_grid(lat, lon, box_size, DEM)
+    ortho_IR = fill_ortho_grid(lat, lon, box_size, IR)
+
+    ortho_mask = normalize(ortho_mask)
+    ortho_DEM = normalize(ortho_DEM)
+    ortho_IR = normalize(ortho_IR)
+    
+    return ortho_DEM, ortho_IR, ortho_mask, craters_xy
+        
+
+
 def gen_dataset(
     DEM,
     IR,
     craters,
     series_prefix,
     start_index,
+    mode,
+    sys_pass=None,
     amount=1000,
     dim=256,
     min_box_size=2,
@@ -357,21 +401,45 @@ def gen_dataset(
     craters_h5 = pd.HDFStore(craters_filename)
 
     for i in tqdm(range(amount)):
-        lat = np.random.uniform(-85, 85)
-        lon = np.random.uniform(-180, 180)
-        box_size = np.exp(np.random.uniform(np.log(min_box_size), np.log(max_box_size)))
+        if mode=='random':
+            lat = np.random.uniform(-85, 85)
+            lon = np.random.uniform(-180, 180)
+            box_size = np.exp(np.random.uniform(np.log(min_box_size), np.log(max_box_size)))
 
-        craters_in_img = get_craters_in_img(
-            craters, lat, lon, box_size, dim
-        )
+        elif mode=='systematic':
+            if sys_pass is None:
+                raise ValueError('If mode is systematic then sys_pass must be provided')
+            
+            elif start_index + i >= len(sys_pass):
+                imgs_h5.flush()
+                craters_h5.flush()
+                imgs_h5.close()
+                craters_h5.close()
+                print('\nNo more images', flush=True)
+                return
+            else:
+                lat, lon, box_size = sys_pass[start_index + i]
+        
+        else:
+            raise ValueError('Mode must be either random or systematic')
 
-        ortho_mask, craters_xy = make_mask(craters_in_img, dim, ring_size)
-        ortho_DEM = fill_ortho_grid(lat, lon, box_size, DEM)
-        ortho_IR = fill_ortho_grid(lat, lon, box_size, IR)
-
-        #ortho_mask = normalize(ortho_mask)
-        ortho_DEM = normalize(ortho_DEM)
-        ortho_IR = normalize(ortho_IR)
+#        craters_in_img = get_craters_in_img(
+#            craters, lat, lon, box_size, dim
+#        )
+#
+#        ortho_mask, craters_xy = make_mask(craters_in_img, dim, ring_size)
+#        ortho_DEM = fill_ortho_grid(lat, lon, box_size, DEM)
+#        ortho_IR = fill_ortho_grid(lat, lon, box_size, IR)
+#
+#        ortho_mask = normalize(ortho_mask)
+#        ortho_DEM = normalize(ortho_DEM)
+#        ortho_IR = normalize(ortho_IR)
+            
+        ortho_DEM, ortho_IR, ortho_mask, craters_xy = make_images(craters, lat,
+                                                                  lon,
+                                                                  box_size,
+                                                                  dim, DEM, IR,
+                                                                  ring_size)
 
         imgs_h5_DEM[i, ...] = ortho_DEM
         imgs_h5_IR[i, ...] = ortho_IR
@@ -384,7 +452,6 @@ def gen_dataset(
 
         imgs_h5.flush()
         craters_h5.flush()
-
     imgs_h5.close()
     craters_h5.close()
 
@@ -399,11 +466,14 @@ def main():
     craters = get_craters(cfg.crater_filename)
 
     print('Generating dataset', flush=True)
-
-    for i in range(1):
+    
+    sys_pass = systematic_pass([])
+    
+    for i in range(len(sys_pass) // 1000 + 1):
         start_index = i * 1000
         print('\n{:05d}'.format(start_index), flush=True)
-        gen_dataset(DEM, IR, craters, 'ran3', start_index)
+        gen_dataset(DEM, IR, craters, 'sys2', start_index, 'systematic',
+                    sys_pass=sys_pass)
 
 
 if __name__=='__main__':

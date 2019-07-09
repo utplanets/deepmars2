@@ -1,8 +1,8 @@
-from keras.layers import Input
 from keras.layers import (Conv2D, BatchNormalization, Activation, Add, Dense,
-                          Flatten)
+                          Reshape, Lambda, Input)
 from keras.models import Model
 from keras.optimizers import Adam
+import numpy as np
 
 
 def EncoderBlock(input_layer, n_kernels, kernel_size, block_number):
@@ -28,8 +28,9 @@ def EncoderBlock(input_layer, n_kernels, kernel_size, block_number):
     return output_layer
 
 
-def build_model(n_kernels, kernel_size, dim=256):
-    input_layer = Input(shape=(dim,dim,1), name='Input')
+def build_model(n_kernels, kernel_size, n_inputs, lr, n_outputs=1,
+				loss='binary_crossentropy', dim=256, summary=True):
+    input_layer = Input(shape=(dim,dim,n_inputs), name='Input')
 
     tmp_layer = EncoderBlock(input_layer, n_kernels, kernel_size, 1)
     tmp_layer = EncoderBlock(tmp_layer, n_kernels, kernel_size, 2)
@@ -40,10 +41,19 @@ def build_model(n_kernels, kernel_size, dim=256):
     tmp_layer = EncoderBlock(tmp_layer, n_kernels, kernel_size, 7)
     tmp_layer = EncoderBlock(tmp_layer, n_kernels, kernel_size, 8)
     
-    output_layer = Dense(1, name='Output_Dense')(tmp_layer)
-    output_layer = Flatten(name='Output_Flatten')(output_layer)
-    model =  Model(input_layer, output_layer)
-    optimizer = Adam(lr=0.01)
-    model.compile(loss='binary_crossentropy', optimizer=optimizer)
-    model.summary()
+    if n_outputs == 3:
+        output_layer = Dense(n_kernels, name='Output_Dense1')(tmp_layer)
+        output_layer = Dense(n_kernels, name='Output_Dense2')(output_layer)
+        output_layer = Dense(n_outputs, name='Output_Dense3')(output_layer)
+        output_layer = Reshape((n_outputs,), name='Output_Reshape')(output_layer)
+        model = Model(input_layer, output_layer)        
+    else:
+        output_layer = Dense(n_outputs, name='Output_Dense')(tmp_layer)
+        output_layer = Reshape((n_outputs,), name='Output_Reshape')(output_layer)
+        output_layer = Activation('sigmoid', name='Output_Sigmoid')(output_layer)
+        model =  Model(input_layer, output_layer)
+    optimizer = Adam(lr=lr)
+    model.compile(loss=loss, optimizer=optimizer, metrics=['binary_accuracy'])
+    if summary:
+        model.summary()
     return model

@@ -7,12 +7,12 @@ images of the Mars and binary ring targets.
 from __future__ import absolute_import, division, print_function
 
 import numpy as np
-import pandas as pd
+#import pandas as pd
 import h5py
 
 from keras.models import load_model
 from keras.callbacks import ModelCheckpoint, TensorBoard, Callback
-from deepmars2.YNET.model import build_YNET, get_weight, update_weight_callback
+#from deepmars2.YNET.model import build_YNET, get_weight, update_weight_callback
 from deepmars2.ResUNET.model import ResUNET
 import deepmars2.features.template_match_target as tmt
 import click
@@ -25,7 +25,7 @@ from keras.backend.tensorflow_backend import set_session
 from imgaug import augmenters as iaa
 from joblib import Parallel, delayed
 import config as cfg
-import pickle
+#import pickle
 
 # Reduce Tensorflow verbosity
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
@@ -49,12 +49,9 @@ def generator_with_replacement(data, target, batch_size=10):
             iaa.Fliplr(0.5),
             iaa.OneOf([iaa.Affine(rotate=0), iaa.Affine(rotate=90),
                        iaa.Affine(rotate=180), iaa.Affine(rotate=270)])])
-    D = data.shape[0]
-
-    max_index = 5000
+    max_index = data.shape[0]
     
     while True:
-        max_index = min(max_index+1, D)
         indices = [np.random.randint(max_index) for _ in range(batch_size)]
         d, t = data[indices].copy(), target[indices].copy()
         
@@ -75,67 +72,68 @@ def generator_with_replacement(data, target, batch_size=10):
         t = t.transpose([2,0,1])[..., np.newaxis]
         
 #        yield ([DEM,IR], t)
-        yield (DEM, t)
+        #yield (DEM, t)
+        yield (IR, t)
         del d
         del t
 
 
-def generator_with_replacement_2(data, file_indices, batch_size=10):
-    craters = [None]*1000*len(file_indices)
-    max_index = data.shape[0]
-    print('Loading craters.')
-    for i in tqdm(range(len(file_indices))):
-        pickle_name = os.path.join(cfg.root_dir,
-                'data/processed/ran2_craters_{:05d}.pkl'.format(file_indices[i]))
-        if os.path.exists(pickle_name):
-            craters_np = pickle.load(open(pickle_name,'rb'))
-            for j in range(1000):
-                craters[i*1000+j] = craters_np[j]
-
-        else:        
-            craters_h5 = pd.HDFStore(os.path.join(cfg.root_dir,
-                'data/processed/ran2_craters_{:05d}.hdf5'.format(file_indices[i])))
-            for j in range(1000):
-                try:
-                    key = 'img_{:05d}'.format(file_indices[i] + j)
-                    craters_pd = craters_h5[key]
-                    craters_np = craters_pd[['x (pix)', 'y (pix)', 'Diameter (pix)']].values
-                    craters_np = craters_np[np.where((craters_np[:,0] >= 0) * 
-                                                 (craters_np[:,0] < 256) * 
-                                                 (craters_np[:,1] >= 0) * 
-                                                 (craters_np[:,1] < 256) * 
-                                                 (craters_np[:,2] >= 2*cfg.minrad_) * 
-                                                 (craters_np[:,2] < 2*cfg.maxrad_))]
-                    craters_np[:,2] -= 2*cfg.minrad_
-                    craters[i*1000+j] = craters_np
-                except:
-                    craters[i*1000+j] = np.empty([3,0])
-            craters_h5.close()
-            pickle.dump(craters[i*1000:i*1000+1000],open(pickle_name,'wb'))
-    
-    while True:
-        indices = [np.random.randint(max_index) for _ in range(batch_size)]
-        DEM = data[indices,0,...].copy()
-        target_shape = DEM.shape[:-1]# + (2*(cfg.maxrad_ - cfg.minrad_),)
-        target = np.zeros(shape=target_shape)
-        #print(target.shape)
-        for i in range(batch_size):
-            index = np.zeros(craters[indices[i]].shape[0],dtype=int)+i
-        #    print((index,*craters[indices[i]].T))
-            #print(target.shape, craters[indices[i]].shape, i, j)
-            #import sys
-            #sys.exit()
-            try:
-                target[(index,*craters[indices[i]][:,:-1].T)] = craters[indices[i]][:,-1].T
-            except:
-                pass
-            
-        target = target[:,:,:,np.newaxis]
-        #import pickle
-        #pickle.dump([[craters[i] for i in indices], target,DEM], open("pickle2.pickle",'wb'))
-        #import sys
-        #sys.exit()
-        yield (DEM, target)
+#def generator_with_replacement_2(data, file_indices, batch_size=10):
+#    craters = [None]*1000*len(file_indices)
+#    max_index = data.shape[0]
+#    print('Loading craters.')
+#    for i in tqdm(range(len(file_indices))):
+#        pickle_name = os.path.join(cfg.root_dir,
+#                'data/processed/ran3_craters_{:05d}.pkl'.format(file_indices[i]))
+#        if os.path.exists(pickle_name):
+#            craters_np = pickle.load(open(pickle_name,'rb'))
+#            for j in range(1000):
+#                craters[i*1000+j] = craters_np[j]
+#
+#        else:        
+#            craters_h5 = pd.HDFStore(os.path.join(cfg.root_dir,
+#                'data/processed/ran3_craters_{:05d}.hdf5'.format(file_indices[i])))
+#            for j in range(1000):
+#                try:
+#                    key = 'img_{:05d}'.format(file_indices[i] + j)
+#                    craters_pd = craters_h5[key]
+#                    craters_np = craters_pd[['x (pix)', 'y (pix)', 'Diameter (pix)']].values
+#                    craters_np = craters_np[np.where((craters_np[:,0] >= 0) * 
+#                                                 (craters_np[:,0] < 256) * 
+#                                                 (craters_np[:,1] >= 0) * 
+#                                                 (craters_np[:,1] < 256) * 
+#                                                 (craters_np[:,2] >= 2*cfg.minrad_) * 
+#                                                 (craters_np[:,2] < 2*cfg.maxrad_))]
+#                    craters_np[:,2] -= 2*cfg.minrad_
+#                    craters[i*1000+j] = craters_np
+#                except:
+#                    craters[i*1000+j] = np.empty([3,0])
+#            craters_h5.close()
+#            pickle.dump(craters[i*1000:i*1000+1000],open(pickle_name,'wb'))
+#    
+#    while True:
+#        indices = [np.random.randint(max_index) for _ in range(batch_size)]
+#        DEM = data[indices,0,...].copy()
+#        target_shape = DEM.shape[:-1]# + (2*(cfg.maxrad_ - cfg.minrad_),)
+#        target = np.zeros(shape=target_shape)
+#        #print(target.shape)
+#        for i in range(batch_size):
+#            index = np.zeros(craters[indices[i]].shape[0],dtype=int)+i
+#        #    print((index,*craters[indices[i]].T))
+#            #print(target.shape, craters[indices[i]].shape, i, j)
+#            #import sys
+#            #sys.exit()
+#            try:
+#                target[(index,*craters[indices[i]][:,:-1].T)] = craters[indices[i]][:,-1].T
+#            except:
+#                pass
+#            
+#        target = target[:,:,:,np.newaxis]
+#        #import pickle
+#        #pickle.dump([[craters[i] for i in indices], target,DEM], open('pickle2.pickle','wb'))
+#        #import sys
+#        #sys.exit()
+#        yield (DEM, target)
 
 def t2c(pred, csv, i):
     return np.hstack([i,
@@ -208,7 +206,7 @@ def get_metrics(data, craters_images, model, preds, name,
 #    diam = 'Diameter (pix)'
 
     for i in range(len(X)):
-        imname = images[i]  # name = "img_{0:05d}".format(i)
+        imname = images[i]  # name = 'img_{0:05d}'.format(i)
         found = False
         for crat in craters:
             if imname in crat:
@@ -267,11 +265,11 @@ def test_model(Data, Craters, MP):
         preds = h5f[MP['test_dataset']][:]
         model = None
 
-    diag = get_metrics(Data[MP["test_dataset"]],
-                       Craters[MP["test_dataset"]],
+    diag = get_metrics(Data[MP['test_dataset']],
+                       Craters[MP['test_dataset']],
                        model,
                        preds,
-                       MP["test_dataset"])
+                       MP['test_dataset'])
     
     return diag
 
@@ -293,19 +291,14 @@ def train_and_test_model(Data, Craters, MP):
     """
     
     # Parameters
-    dim = MP['dim']
     nb_epoch = MP['epochs']
     bs = MP['bs']
-    FL = MP['filter_length'][0]
     learn_rate = MP['lr'][0]
-    n_filters = MP['n_filters'][0]
-#    init = MP['init']
-    lmbda = MP['lambda'][0]
-    drop = MP['dropout'][0]
+
 
     # Build model
-    if MP["model"] is not None:
-        model = load_model(MP["model"])
+    if MP['model'] is not None:
+        model = load_model(MP['model'])
     else:
 #        model = build_YNET(4, 2, dim, FL, n_filters, drop, learn_rate,
 #                           lmbda=lmbda, activation_function='relu')
@@ -330,22 +323,10 @@ def train_and_test_model(Data, Craters, MP):
     save_name = save_folder + '/{epoch:02d}-{val_loss:.2f}.hdf5'
     save_model = ModelCheckpoint(os.path.join(cfg.root_dir, save_name),
                                  save_best_only=True)
-    #log_dir=os.path.join(cfg.root_dir, 'YNET/logs', now)
     log_dir=os.path.join(cfg.root_dir, 'ResUNET/logs', now)
     tensorboard = TensorBoard(log_dir, batch_size=bs) 
-    tbi_test = TensorBoardImage(log_dir, images=[Data['dev'][0][:,0], Data['dev'][1]])
-    update_weight = update_weight_callback()
-    
-    #val_sample = slice(0,100)
-    #val_sample = slice(None)
-#    model.fit_generator(generator_with_replacement(Data['train'][0],
-#                                                   Data['train'][1],
-#                                                   batch_size=bs),
-#                        steps_per_epoch=n_samples // bs,
-#                        verbose=1,
-#                        validation_data=([Data['dev'][0][val_sample,0], Data['dev'][0][val_sample,1]], Data['dev'][1][val_sample]),
-#                        callbacks=[save_model, tensorboard, tbi_test, update_weight],
-#                        epochs=nb_epoch)
+    tbi_test = TensorBoardImage(log_dir, [Data['dev'][0], Data['dev'][1]])
+
     model.fit_generator(generator_with_replacement(Data['train'][0],
                                                    Data['train'][1],
                                                    batch_size=bs),
@@ -355,17 +336,6 @@ def train_and_test_model(Data, Craters, MP):
                         validation_steps=300,
                         callbacks=[save_model, tensorboard, tbi_test],
                         epochs=nb_epoch)
-#    model.fit_generator(generator_with_replacement_2(Data['train'][0],
-#                                                     MP['train_indices'],
-#                                                     batch_size=bs),
-#                        steps_per_epoch=n_samples // bs,
-#                        verbose=1,
-#                        validation_data=generator_with_replacement_2(Data['dev'][0],
-#                                                                     MP['dev_indices'],
-#                                                                     batch_size=bs),
-#                        validation_steps=100,
-#                        callbacks=[save_model, tensorboard],
-#                        epochs=nb_epoch)
 
 
 def make_image(tensor):
@@ -389,28 +359,29 @@ def make_image(tensor):
 
 
 class TensorBoardImage(Callback):
-    def __init__(self, log_dir, images):
+    def __init__(self, log_dir, data):
         super().__init__() 
         self.log_dir = log_dir
-        self.images = images
+        self.data = data
 
     def on_epoch_end(self, epoch, logs=None):
         logs = logs or {}
-        data = self.images # self.validation_data
+        data = self.data # self.validation_data
         #input_DEM = data[0]
-        #input_IR = data[1]
-        input_DEM = data[0]
+        input_IR = data[0][:,1]
+        input_DEM = data[0][:,0]
 #        target_masks = data[2]
         target_masks = data[1]
+
         print('gerenating validation prediction images')
 #        preds = self.model.predict([input_DEM, input_IR], batch_size=1)
-        preds = self.model.predict(input_DEM, batch_size=1)
+        preds = self.model.predict(input_IR, batch_size=1)
         
         images = []
         for i in tqdm(range(10)):
-            normed = preds[i,:,:,0] / max(preds[i,:,:,0].max(), 1e-6)
+            #normed = preds[i,:,:,0] / max(preds[i,:,:,0].max(), 1e-6)
             img = np.vstack([np.hstack([input_DEM[i,:,:,0],
-                                        normed]),
+                                        input_IR[i,:,:,0]]),
                              np.hstack([target_masks[i,:,:,0],
                                         preds[i,:,:,0]])
                             ])
@@ -421,7 +392,8 @@ class TensorBoardImage(Callback):
                 for i in range(len(images))] +
                 [tf.Summary.Value(tag='loss', simple_value=logs['loss']),
                  tf.Summary.Value(tag='val_loss', simple_value=logs['val_loss']),
-                 tf.Summary.Value(tag='weight', simple_value=get_weight())])
+#                 tf.Summary.Value(tag='weight', simple_value=get_weight())
+                 ])
         writer = tf.summary.FileWriter(self.log_dir)
         writer.add_summary(summary, epoch)
         writer.close()
@@ -453,18 +425,18 @@ def get_models(MP):
         if not test or (test and this_dataset):
             for n in tqdm(numbers):
                 files.append(h5py.File(os.path.join(
-                    dir, prefix + "_images_{0:05d}.hdf5".format(n)), 'r'))
-                images.extend(["img_{0:05d}".format(a)
+                    dir, prefix + '_images_{0:05d}.hdf5'.format(n)), 'r'))
+                images.extend(['img_{0:05d}'.format(a)
                               for a in np.arange(n, n + 1000)])
-                #res0.append(files[-1]["input_DEM"][:].astype('float32'))
+                #res0.append(files[-1]['input_DEM'][:].astype('float32'))
                              
-                res0.append([files[-1]["input_DEM"][:].astype('float32'),
-                             files[-1]["input_IR"][:].astype('float32')])
+                res0.append([files[-1]['input_DEM'][:].astype('float32'),
+                             files[-1]['input_IR'][:].astype('float32')])
                 npic = npic + len(res0[-1])
-                res1.append(files[-1]["target_masks"][:].astype('float32'))
+                res1.append(files[-1]['target_masks'][:].astype('float32'))
                 files[-1].close()
 #                craters.append(pd.HDFStore(os.path.join(
-#                    dir, prefix + "_craters_{0:05d}.hdf5".format(n)), 'r'))
+#                    dir, prefix + '_craters_{0:05d}.hdf5'.format(n)), 'r'))
             res0 = np.vstack(res0).transpose([1,0,2,3])
             res1 = np.vstack(res1)
         return files, res0, res1, npic, craters, images
@@ -474,9 +446,9 @@ def get_models(MP):
         train1,\
         Ntrain,\
         train_craters,\
-        train_images = load_files(MP["train_indices"],
-                                  MP["test"],
-                                  MP["test_dataset"] == "train")
+        train_images = load_files(MP['train_indices'],
+                                  MP['test'],
+                                  MP['test_dataset'] == 'train')
     print(Ntrain, n_train)
 
     dev_files,\
@@ -484,9 +456,9 @@ def get_models(MP):
         dev1,\
         Ndev,\
         dev_craters,\
-        dev_images = load_files(MP["dev_indices"],
-                                MP["test"],
-                                MP["test_dataset"] == "dev")
+        dev_images = load_files(MP['dev_indices'],
+                                MP['test'],
+                                MP['test_dataset'] == 'dev')
     print(Ndev, n_dev)
 
     test_files,\
@@ -494,15 +466,15 @@ def get_models(MP):
         test1,\
         Ntest,\
         test_craters,\
-        test_images = load_files(MP["test_indices"],
-                                 MP["test"],
-                                 MP["test_dataset"] == "test")
+        test_images = load_files(MP['test_indices'],
+                                 MP['test'],
+                                 MP['test_dataset'] == 'test')
     print(Ntest, n_test)
 
     Data = {
-        "train": [train0, train1],
-        "dev": [dev0, dev1],
-        "test": [test0[:n_test], test1[:n_test]]
+        'train': [train0, train1],
+        'dev': [dev0, dev1],
+        'test': [test0[:n_test], test1[:n_test]]
         }
 
     def preprocess(Data):
@@ -523,7 +495,7 @@ def get_models(MP):
     }
 
 #    # Iterate over parameters
-    if MP["test"]:
+    if MP['test']:
 #        minrad_ = 3
 #        maxrad_ = 60
 #        longlat_thresh2_ = 1.8
@@ -540,10 +512,10 @@ def get_models(MP):
 
 
 @dl.command()
-@click.option("--test", is_flag=True, default=False)
-@click.option("--test_dataset", default="ran2")
-@click.option("--model", default=None)
-@click.option("--predictions", default=None)
+@click.option('--test', is_flag=True, default=False)
+@click.option('--test_dataset', default='ran3')
+@click.option('--model', default=None)
+@click.option('--predictions', default=None)
 def train_model(test, test_dataset, model, predictions):
     """Run Convolutional Neural Network Training
 
@@ -570,8 +542,8 @@ def train_model(test, test_dataset, model, predictions):
     MP['per_epoch'] = 1000
 
     MP['train_indices'] = list(np.arange(0, 40000, 1000))
-    MP['dev_indices'] = [41000, 42000, 43000, 44000, 45000]#list(np.arange(161000, 206000, 4000))
-    MP['test_indices'] = [46000, 47000, 48000, 49000]#list(np.arange(163000, 206000, 4000))
+    MP['dev_indices'] = [41000, 42000, 43000, 44000, 45000]
+    MP['test_indices'] = [46000, 47000, 48000, 49000]
 
     MP['n_train'] = len(MP['train_indices']) * 1000
     MP['n_dev'] = len(MP['dev_indices']) * 1000
@@ -584,8 +556,8 @@ def train_model(test, test_dataset, model, predictions):
     MP['predictions'] = predictions
 
     # testing only
-    MP["test"] = test
-    MP["test_dataset"] = test_dataset
+    MP['test'] = test
+    MP['test_dataset'] = test_dataset
 
     MP['filter_length'] = [3]           # Filter length
     MP['lr'] = [0.0001]                 # Learning rate
@@ -594,7 +566,7 @@ def train_model(test, test_dataset, model, predictions):
     MP['lambda'] = [1e-6]               # Weight regularization
     MP['dropout'] = [0.15]              # Dropout fraction
     
-    MP['prefix'] = 'ran2'
+    MP['prefix'] = 'ran3'
     
     print(MP)
     get_models(MP)

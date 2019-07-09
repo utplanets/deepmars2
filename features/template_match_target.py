@@ -1,7 +1,7 @@
 import numpy as np
 from skimage.feature import match_template
 import cv2
-import config as cfg
+import deepmars2.config as cfg
 
 #####################################
 """
