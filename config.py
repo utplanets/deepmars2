@@ -29,3 +29,11 @@ crater_filename = root_dir + "/data/raw/RobbinsCraters_20121016.tsv"
 
 # Moon
 R_planet = 1737.1
+
+# Best pre-trained models
+mars_DEM_model = root_dir + '/ResUNET/models/Tue Jun 18 17:26:59 2019/139-0.59.hdf5'
+moon_DEM_model = root_dir + '/ResUNET/models/Fri Jul 19 12:20:22 2019/51-0.60.hdf5'
+mars_IR_model = root_dir + '/ResUNET/models/Thu Jun 27 14:04:17 2019/78-0.65.hdf5'
+moon_IR_model = root_dir + '/ResUNET/models/Thu Jul 18 16:31:46 2019/108-0.62.hdf5'
+mars_post_processing_model = root_dir + '/post_processing_net/models/Fri Jun 21 09:16:43 2019/61-0.899.hdf5'
+moon_post_processing_model = root_dir + '/post_processing_net/models/Fri Jul 19 10:32:53 2019/17-0.934.hdf5'

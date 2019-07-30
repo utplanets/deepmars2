@@ -44,7 +44,7 @@ def dl():
     logging.basicConfig(level=logging.INFO, format=log_fmt)
 
 
-def generator_with_replacement(data, target, batch_size=10):
+def generator_with_replacement(data, target, image_type, batch_size=10):
     augmentation = iaa.Sequential([
             iaa.Fliplr(0.5),
             iaa.OneOf([iaa.Affine(rotate=0), iaa.Affine(rotate=90),
@@ -71,69 +71,14 @@ def generator_with_replacement(data, target, batch_size=10):
         IR = IR.transpose([2,0,1])[..., np.newaxis]
         t = t.transpose([2,0,1])[..., np.newaxis]
         
-#        yield ([DEM,IR], t)
-        #yield (DEM, t)
-        yield (IR, t)
-        del d
-        del t
+        if image_type not in ['IR', 'DEM']:
+            raise ValueError('image_type must be one of IR or DEM')
+        if image_type == 'IR':
+            yield (IR, t)
+        if image_type == 'DEM':
+            yield (DEM, t)
 
 
-#def generator_with_replacement_2(data, file_indices, batch_size=10):
-#    craters = [None]*1000*len(file_indices)
-#    max_index = data.shape[0]
-#    print('Loading craters.')
-#    for i in tqdm(range(len(file_indices))):
-#        pickle_name = os.path.join(cfg.root_dir,
-#                'data/processed/ran3_craters_{:05d}.pkl'.format(file_indices[i]))
-#        if os.path.exists(pickle_name):
-#            craters_np = pickle.load(open(pickle_name,'rb'))
-#            for j in range(1000):
-#                craters[i*1000+j] = craters_np[j]
-#
-#        else:        
-#            craters_h5 = pd.HDFStore(os.path.join(cfg.root_dir,
-#                'data/processed/ran3_craters_{:05d}.hdf5'.format(file_indices[i])))
-#            for j in range(1000):
-#                try:
-#                    key = 'img_{:05d}'.format(file_indices[i] + j)
-#                    craters_pd = craters_h5[key]
-#                    craters_np = craters_pd[['x (pix)', 'y (pix)', 'Diameter (pix)']].values
-#                    craters_np = craters_np[np.where((craters_np[:,0] >= 0) * 
-#                                                 (craters_np[:,0] < 256) * 
-#                                                 (craters_np[:,1] >= 0) * 
-#                                                 (craters_np[:,1] < 256) * 
-#                                                 (craters_np[:,2] >= 2*cfg.minrad_) * 
-#                                                 (craters_np[:,2] < 2*cfg.maxrad_))]
-#                    craters_np[:,2] -= 2*cfg.minrad_
-#                    craters[i*1000+j] = craters_np
-#                except:
-#                    craters[i*1000+j] = np.empty([3,0])
-#            craters_h5.close()
-#            pickle.dump(craters[i*1000:i*1000+1000],open(pickle_name,'wb'))
-#    
-#    while True:
-#        indices = [np.random.randint(max_index) for _ in range(batch_size)]
-#        DEM = data[indices,0,...].copy()
-#        target_shape = DEM.shape[:-1]# + (2*(cfg.maxrad_ - cfg.minrad_),)
-#        target = np.zeros(shape=target_shape)
-#        #print(target.shape)
-#        for i in range(batch_size):
-#            index = np.zeros(craters[indices[i]].shape[0],dtype=int)+i
-#        #    print((index,*craters[indices[i]].T))
-#            #print(target.shape, craters[indices[i]].shape, i, j)
-#            #import sys
-#            #sys.exit()
-#            try:
-#                target[(index,*craters[indices[i]][:,:-1].T)] = craters[indices[i]][:,-1].T
-#            except:
-#                pass
-#            
-#        target = target[:,:,:,np.newaxis]
-#        #import pickle
-#        #pickle.dump([[craters[i] for i in indices], target,DEM], open('pickle2.pickle','wb'))
-#        #import sys
-#        #sys.exit()
-#        yield (DEM, target)
 
 def t2c(pred, csv, i):
     return np.hstack([i,
@@ -294,7 +239,7 @@ def train_and_test_model(Data, Craters, MP):
     nb_epoch = MP['epochs']
     bs = MP['bs']
     learn_rate = MP['lr'][0]
-
+    image_type = MP['image_type']
 
     # Build model
     if MP['model'] is not None:
@@ -325,14 +270,19 @@ def train_and_test_model(Data, Craters, MP):
                                  save_best_only=True)
     log_dir=os.path.join(cfg.root_dir, 'ResUNET/logs', now)
     tensorboard = TensorBoard(log_dir, batch_size=bs) 
-    tbi_test = TensorBoardImage(log_dir, [Data['dev'][0], Data['dev'][1]])
+    tbi_test = TensorBoardImage(log_dir, [Data['dev'][0], Data['dev'][1]],
+                                image_type)
 
     model.fit_generator(generator_with_replacement(Data['train'][0],
                                                    Data['train'][1],
+                                                   image_type,
                                                    batch_size=bs),
                         steps_per_epoch=n_samples // bs,
                         verbose=1,
-                        validation_data=generator_with_replacement(Data['dev'][0], Data['dev'][1], batch_size=bs),
+                        validation_data=generator_with_replacement(Data['dev'][0],
+                                                                   Data['dev'][1],
+                                                                   image_type,
+                                                                   batch_size=bs),
                         validation_steps=300,
                         callbacks=[save_model, tensorboard, tbi_test],
                         epochs=nb_epoch)
@@ -359,27 +309,29 @@ def make_image(tensor):
 
 
 class TensorBoardImage(Callback):
-    def __init__(self, log_dir, data):
+    def __init__(self, log_dir, data, image_type):
         super().__init__() 
         self.log_dir = log_dir
         self.data = data
+        if image_type not in ['IR', 'DEM']:
+            raise ValueError('image_type must be one of IR or DEM')
+        self.image_type = image_type
 
     def on_epoch_end(self, epoch, logs=None):
         logs = logs or {}
         data = self.data # self.validation_data
-        #input_DEM = data[0]
         input_IR = data[0][:,1]
         input_DEM = data[0][:,0]
-#        target_masks = data[2]
         target_masks = data[1]
 
         print('gerenating validation prediction images')
-#        preds = self.model.predict([input_DEM, input_IR], batch_size=1)
-        preds = self.model.predict(input_IR, batch_size=1)
+        if self.image_type == 'IR':
+            preds = self.model.predict(input_IR, batch_size=1)
+        if self.image_type == 'DEM':
+            preds = self.model.predict(input_DEM, batch_size=1)
         
         images = []
         for i in tqdm(range(10)):
-            #normed = preds[i,:,:,0] / max(preds[i,:,:,0].max(), 1e-6)
             img = np.vstack([np.hstack([input_DEM[i,:,:,0],
                                         input_IR[i,:,:,0]]),
                              np.hstack([target_masks[i,:,:,0],
@@ -516,7 +468,9 @@ def get_models(MP):
 @click.option('--test_dataset', default='ran3')
 @click.option('--model', default=None)
 @click.option('--predictions', default=None)
-def train_model(test, test_dataset, model, predictions):
+@click.option('--prefix', default='ran3')
+@click.option('--image_type', default=None)
+def train_model(test, test_dataset, model, predictions, prefix, image_type):
     """Run Convolutional Neural Network Training
 
     Execute the training of a (UNET) Convolutional Neural Network on
@@ -566,7 +520,12 @@ def train_model(test, test_dataset, model, predictions):
     MP['lambda'] = [1e-6]               # Weight regularization
     MP['dropout'] = [0.15]              # Dropout fraction
     
-    MP['prefix'] = 'ran3'
+    MP['prefix'] = prefix
+    
+    if image_type not in ['IR', 'DEM']:
+        raise ValueError('image_type must be one of IR or DEM')
+    
+    MP['image_type'] = image_type
     
     print(MP)
     get_models(MP)

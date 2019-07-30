@@ -4,20 +4,21 @@ from pyproj.transformer import Transformer
 import tifffile
 import h5py
 import cv2
-from tqdm import tqdm
+from tqdm import tqdm, tqdm_notebook
 from sklearn.preprocessing import MinMaxScaler
 import deepmars2.config as cfg
 
-_R_Mars = cfg.R_planet # radius of Mars in km
 
-def get_DEM(filename):
+def get_DEM(filename, is_Mars):
     """Reads the DEM from a large tiff file.
 
     Paramters
     ---------
     filename : str
         Path of the DEM file.
-
+    is_Mars : bool, optional
+        Whether the DEM is of Mars
+    
     Returns
     -------
     DEM : numpy.ndarray
@@ -26,8 +27,9 @@ def get_DEM(filename):
 
     DEM = tifffile.imread(filename)
     
-    # Remove missing data on left edge
-    DEM[:,-1] = (DEM[:,-2] + DEM[:,0])/2
+    if is_Mars:
+        # Remove missing data on left edge
+        DEM[:,-1] = (DEM[:,-2] + DEM[:,0])/2
     
     return DEM
 
@@ -46,7 +48,9 @@ def get_IR(filename):
         The image as a numpy array.
     """
     
-    return tifffile.imread(filename)
+    IR = tifffile.imread(filename)
+    
+    return IR
 
 
 def get_craters(filename):
@@ -130,7 +134,7 @@ def fill_ortho_grid(lat_0, lon_0, box_size, img, dim=256):
     return ortho
 
 
-def make_mask(craters, dim, ring_size):
+def make_mask(craters, ring_size, dim=256):
     """Creates a target mask given a list of craters.
 
     Paramters
@@ -138,22 +142,22 @@ def make_mask(craters, dim, ring_size):
     craters : pandas.DataFrame
         A dataframe containing the crater positions in pixel space.  The
         columns must include 'x pix', 'y (pix)', and 'Diameter (pix)'.
-    dim : int
-        The width/height of the output image.  Only square outputs are
-        supported.
     ring_size : int
         The thickness of the rings to be drawn.
+    dim : int, optional
+        The width/height of the output image.  Only square outputs are
+        supported.
     
     Returns
     -------
-    ortho : numpy.ndarray
-        The orthographic projection.
+    mask : numpy.ndarray
+        The target mask.
     """
     
     mask = np.zeros(shape=(dim, dim))
     
     if craters.empty:
-        return mask, craters
+        return mask
     
     
     for irow, row in craters[['x (pix)', 'y (pix)', 'Diameter (pix)']].iterrows():
@@ -165,7 +169,7 @@ def make_mask(craters, dim, ring_size):
             ring_size,
         )
 
-    return mask, craters
+    return mask
 
 
 def normalize(array):
@@ -174,7 +178,7 @@ def normalize(array):
     Parameters
     ----------
     array : numpy.ndarray
-        The array to be normalized
+        The array to be normalized.
         
     Returns
     -------
@@ -192,7 +196,7 @@ def normalize(array):
     return normalized
 
 
-def get_craters_in_img(craters, lat_0, lon_0, box_size, dim):
+def get_craters_in_img(craters, lat_0, lon_0, box_size, dim=256):
     """Return a list of the craters in an image.
     
     Parameters
@@ -254,10 +258,42 @@ def get_craters_in_img(craters, lat_0, lon_0, box_size, dim):
     return craters_in_img
 
 
-def xyd_to_lld(x, y, d, lat_0, lon_0, box_size, dim=256):  
+def xyd_to_lld(x, y, d, lat_0, lon_0, box_size, dim=256):
+    """Convert crater coordinates from pixels in an orthographic projection
+    to latitude and longitude in degrees and diameter in kilometers.
+    
+    Parameters
+    ----------
+    x : int
+        The x-coordinate in pixels.
+    y : int
+        The y-coordinate in pixels.
+    d : int
+        The diameter in pixels.
+    lat_0 : float
+        Central latitude of the image.
+    lon_0 : float
+        Central longitude of the image.
+    box_size : float
+        An abstract quantity measuring the size of the region being projected.
+        It is proportional to the absolute size of the box in km but scaled so
+        that at the equator, a box of size 1 denotes a box 1 degree across.
+    dim : int, optional
+        The width/height of the output image.  Only square images are
+        supported.
+    
+    Returns
+    -------
+    lat : float
+        The latitude in degrees.
+    lon : float
+        The longitude in degrees.
+    d : float
+        The diameter in kilometers.
+    """
     
     deg_per_pix = box_size / dim
-    km_per_deg = np.pi * _R_Mars / 180
+    km_per_deg = np.pi * cfg.R_planet / 180
     km_per_pix = deg_per_pix * km_per_deg
     
     d *= km_per_pix
@@ -282,9 +318,41 @@ def xyd_to_lld(x, y, d, lat_0, lon_0, box_size, dim=256):
 
 
 def lld_to_xyd(lat, lon, d, lat_0, lon_0, box_size, dim=256, return_ints=True):
+    """Convert crater coordinates from latitude and longitude in degrees and
+    diameter in kilometers to pixels in an orthographic projection.
+    
+    Parameters
+    ----------
+    lat : float
+        The latitude in degrees.
+    lon : float
+        The longitude in degrees.
+    d : float
+        The diameter in kilometers.
+    lat_0 : float
+        Central latitude of the image.
+    lon_0 : float
+        Central longitude of the image.
+    box_size : float
+        An abstract quantity measuring the size of the region being projected.
+        It is proportional to the absolute size of the box in km but scaled so
+        that at the equator, a box of size 1 denotes a box 1 degree across.
+    dim : int, optional
+        The width/height of the output image.  Only square images are
+        supported.
+    
+    Returns
+    -------
+    x : int
+        The x-coordinate in pixels.
+    y : int
+        The y-coordinate in pixels.
+    d : int
+        The diameter in pixels.
+    """
     
     deg_per_pix = box_size / dim
-    km_per_deg = np.pi * _R_Mars / 180
+    km_per_deg = np.pi * cfg.R_planet / 180
     km_per_pix = deg_per_pix * km_per_deg
     
     d /= km_per_pix
@@ -314,23 +382,42 @@ def lld_to_xyd(lat, lon, d, lat_0, lon_0, box_size, dim=256, return_ints=True):
         return x, y, d
 
 
-def get_min_width(box_size, lat):
-    return box_size / np.cos(np.deg2rad(lat))
+def get_approx_width(box_size, lat):
+    """Get the approximate width of a box at a given latitude and box size.
+    
+    Parameters
+    ----------
+    box_size : float
+        An abstract quantity measuring the size of the region being projected.
+    It is proportional to the absolute size of the box in km but scaled so
+    that at the equator, a box of size 1 denotes a box 1 degree across.
+    lat : float
+        The latitude of the box in degrees.
+    
+    Returns
+    -------
+    min_width : float
+        The approximate minimum width of the box.
+    """
+    
+    min_width = box_size / np.cos(np.deg2rad(lat))
+    
+    return min_width
 
 
-def systematic_pass(box_sizes):
+def systematic_pass(box_sizes, min_lat=-90, max_lat=90, min_long=-180, max_long=180):
     coords = []
     
     for box_size in box_sizes:
         box_size = box_size / 2 # for overlap
-        n_lats = int(np.ceil(180 / box_size))
-        lats = np.linspace(-90, 90, n_lats + 1)
+        n_lats = int(np.ceil((max_lat - min_lat) / box_size))
+        lats = np.linspace(min_lat, max_lat, n_lats + 1)
         lats = lats[:-1] + np.diff(lats) / 2
         
         for lat in lats:
-            width = get_min_width(box_size, lat)
-            n_lons = int(np.ceil(360 / width))
-            lons = np.linspace(-180, 180, n_lons + 1)
+            width = get_approx_width(box_size, lat)
+            n_lons = int(np.ceil((max_long - min_long) / width))
+            lons = np.linspace(min_long, max_long, n_lons + 1)
             lons = lons[:-1] + np.diff(lons) / 2
             
             for lon in lons:
@@ -342,9 +429,9 @@ def systematic_pass(box_sizes):
             
 
 def make_images(craters, lat, lon, box_size, dim, DEM, IR, ring_size):
-    craters_in_img = get_craters_in_img(craters, lat, lon, box_size, dim)
+    craters_in_img = get_craters_in_img(craters, lat, lon, box_size, dim=dim)
     
-    ortho_mask, craters_xy = make_mask(craters_in_img, dim, ring_size)
+    ortho_mask = make_mask(craters_in_img, ring_size, dim=dim)
     ortho_DEM = fill_ortho_grid(lat, lon, box_size, DEM)
     ortho_IR = fill_ortho_grid(lat, lon, box_size, IR)
 
@@ -352,7 +439,7 @@ def make_images(craters, lat, lon, box_size, dim, DEM, IR, ring_size):
     ortho_DEM = normalize(ortho_DEM)
     ortho_IR = normalize(ortho_IR)
     
-    return ortho_DEM, ortho_IR, ortho_mask, craters_xy
+    return ortho_DEM, ortho_IR, ortho_mask, craters_in_img
         
 
 
@@ -368,7 +455,10 @@ def gen_dataset(
     dim=256,
     min_box_size=2,
     max_box_size=30,
-    ring_size=1
+    ring_size=1,
+    in_notebook=False,
+    min_lat=-90,
+    max_lat=90
 ):
     
     # Create HDF5 files
@@ -400,9 +490,14 @@ def gen_dataset(
             cfg.root_dir, series_prefix, start_index)
     craters_h5 = pd.HDFStore(craters_filename)
 
-    for i in tqdm(range(amount)):
+    if in_notebook:
+        tqdm_type = tqdm_notebook
+    else:
+        tqdm_type = tqdm
+    
+    for i in tqdm_type(range(amount)):
         if mode=='random':
-            lat = np.random.uniform(-85, 85)
+            lat = np.random.uniform(min_lat, max_lat)
             lon = np.random.uniform(-180, 180)
             box_size = np.exp(np.random.uniform(np.log(min_box_size), np.log(max_box_size)))
 
@@ -422,18 +517,6 @@ def gen_dataset(
         
         else:
             raise ValueError('Mode must be either random or systematic')
-
-#        craters_in_img = get_craters_in_img(
-#            craters, lat, lon, box_size, dim
-#        )
-#
-#        ortho_mask, craters_xy = make_mask(craters_in_img, dim, ring_size)
-#        ortho_DEM = fill_ortho_grid(lat, lon, box_size, DEM)
-#        ortho_IR = fill_ortho_grid(lat, lon, box_size, IR)
-#
-#        ortho_mask = normalize(ortho_mask)
-#        ortho_DEM = normalize(ortho_DEM)
-#        ortho_IR = normalize(ortho_IR)
             
         ortho_DEM, ortho_IR, ortho_mask, craters_xy = make_images(craters, lat,
                                                                   lon,
@@ -459,21 +542,44 @@ def gen_dataset(
 def main():
 
     print('Loading DEM')
-    DEM = get_DEM(cfg.DEM_filename)
+    #DEM = get_DEM(cfg.DEM_filename)
+    #DEM = tifffile.imread('/disks/work/james/deepmars2/data/raw/Lunar_LRO_LOLA_Global_LDEM_118m_Mar2014.tif')
+    DEM = tifffile.imread('../data/raw/Lunar_LRO_LOLAKaguya_DEMmerge_60N60S_512ppd.tif')
+    padding = (DEM.shape[1] // 2 - DEM.shape[0]) // 2
+    new_DEM = np.zeros((DEM.shape[1] // 2, DEM.shape[1]), dtype='int16')
+    new_DEM[padding:padding + DEM.shape[0],:] = DEM
+    del DEM
+    DEM = new_DEM
     print('Loading IR')
-    IR = get_IR(cfg.IR_filename)
+    #IR = get_IR(cfg.IR_filename)
+    #IR = tifffile.imread('/disks/work/james/deepmars2/data/raw/Lunar_LRO_LROC-WAC_Mosaic_global_100m_June2013.tif')
+    IR = tifffile.imread('../data/raw/Lunar_LRO_LOLAKaguya_Shade_60N60S_512ppd.tif')
+    padding = (IR.shape[1] // 2 - IR.shape[0]) // 2
+    new_IR = np.zeros((IR.shape[1] // 2, IR.shape[1]), dtype='int16')
+    new_IR[padding:padding + IR.shape[0],:] = IR
+    del IR
+    IR = new_IR
     print('Loading craters')
-    craters = get_craters(cfg.crater_filename)
-
+    #craters = get_craters(cfg.crater_filename)
+    # Load LROC Craters (5km - 20km)
+    
+    cols = ['Long', 'Lat', 'Diameter (km)']
+    LROC = pd.read_csv('../data/raw/LROCCraters.csv')[cols].copy()
+    
+    # Load Head Craters (20 km +)
+    
+    Head = pd.read_csv('../data/raw/HeadCraters.csv')
+    Head.rename(columns={'Lon':'Long', 'Lat':'Lat', 'Diam_km':'Diameter (km)'}, inplace=True)
+    Head = Head[cols].copy()
+    
+    craters = pd.concat([LROC, Head])
+        
     print('Generating dataset', flush=True)
     
-    sys_pass = systematic_pass([])
-    
-    for i in range(len(sys_pass) // 1000 + 1):
+    for i in range(50):
         start_index = i * 1000
         print('\n{:05d}'.format(start_index), flush=True)
-        gen_dataset(DEM, IR, craters, 'sys2', start_index, 'systematic',
-                    sys_pass=sys_pass)
+        gen_dataset(DEM, IR, craters, 'ran_moon_hd', start_index, 'random', min_box_size=4.25, min_lat=-60, max_lat=60)
 
 
 if __name__=='__main__':

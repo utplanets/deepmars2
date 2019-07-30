@@ -1,8 +1,13 @@
+import sys
+# Hide backend message when importing keras
+stderr = sys.stderr
+sys.stderr = open('/dev/null', 'w')
 from keras.layers import (Conv2D, BatchNormalization, Activation, Add,
                           UpSampling2D, Concatenate, Input, Dropout)
 from keras.models import Model
 from keras.optimizers import Adam
 from keras import backend as K
+sys.stderr = stderr
 
 
 def dice_loss(y_true, y_pred):

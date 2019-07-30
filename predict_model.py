@@ -6,7 +6,6 @@ out duplicates.
 """
 import click
 import logging
-import keras.models as km
 import deepmars2.features.template_match_target as tmt
 import numpy as np
 import h5py
@@ -20,6 +19,14 @@ from pyproj import Transformer
 from cratertools import metric
 from deepmars2.ResUNET.model import dice_loss
 import pickle
+import sys
+
+# Hide backend message when importing keras
+stderr = sys.stderr
+sys.stderr = open('/dev/null', 'w')
+import keras.models as km
+sys.stderr = stderr
+
 
 
 # Reduce Tensorflow verbosity
@@ -116,7 +123,7 @@ def add_unique_craters(craters, craters_unique, thresh_longlat2, thresh_rad):
     craters_unique : array
         Modified master array of unique crater tuples with new crater entries.
     """
-    k2d = 180.0 / (np.pi * 3389.0)  # km to deg
+    k2d = 180.0 / (np.pi * cfg.R_planet)  # km to deg
     Long, Lat, Rad = craters_unique.T
     for j in range(len(craters)):
         lo, la, r = craters[j].T
@@ -214,7 +221,7 @@ def long_lat_rad_km_from_pix(coords, box_size, central_lat_lon, dim=256):
     lon, lat = transformer.transform(y, x)
     assert (-180 <= lon).all() and (lon <= 180).all()
     assert (-90 <= lat).all() and (lat <= 90).all()
-    km_per_deg = 2 * np.pi * 3389.5 / 360
+    km_per_deg = 2 * np.pi * cfg.R_planet / 360
     r *= km_per_deg
     return np.vstack([lon, lat, r]).T
 
@@ -334,7 +341,7 @@ def extract_unique_craters(
 @click.group()
 def predict():
     log_fmt = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    logging.basicConfig(level=logging.INFO, format=log_fmt)
+    logging.basicConfig(level=logging.ERROR, format=log_fmt)
     pass
 
 
@@ -360,9 +367,12 @@ def cnn_prediction(index, prefix, output_prefix, model, dataset):
     
     if model is None:
         if dataset == 'IR':
-            model = os.path.join(cfg.root_dir, './ResUNET/models/Thu Jun 27 14:04:17 2019/78-0.65.hdf5')
+            #model = os.path.join(cfg.root_dir, './ResUNET/models/Thu Jun 27 14:04:17 2019/78-0.65.hdf5')
+            #model = os.path.join(cfg.root_dir, '/disks/work/james/deepmars2/ResUNET/models/Fri Jul 12 09:59:22 2019/64-0.68.hdf5')
+            model = cfg.moon_IR_model
         elif dataset == 'DEM':
-            model = os.path.join(cfg.root_dir, './ResUNET/models/Tue Jun 18 17:26:59 2019/139-0.59.hdf5')
+            #model = os.path.join(cfg.root_dir, './ResUNET/models/Tue Jun 18 17:26:59 2019/139-0.59.hdf5')
+            model = cfg.moon_DEM_model
         else:
             raise ValueError('dataset must be one of DEM or IR')
     
