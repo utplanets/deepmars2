@@ -1,5 +1,6 @@
 import numpy as np
-from skimage.feature import match_template
+#from skimage.feature import match_template
+from deepmars2.features.improved_match_template import match_template
 import cv2
 import deepmars2.config as cfg
 
