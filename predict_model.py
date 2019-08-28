@@ -12,7 +12,7 @@ import h5py
 import os
 import time
 import pandas as pd
-from joblib import Parallel, delayed
+from joblib import Parallel, delayed, load, dump
 import deepmars2.config as cfg
 from tqdm import tqdm
 from pyproj import Transformer
@@ -142,7 +142,14 @@ def add_unique_craters(craters, craters_unique, thresh_longlat2, thresh_rad):
     return craters_unique
 
 
-def match_template(pred, craters, i, index, dim, withmatches=False):
+def match_template_wrapper(preds, craters, low,high, index, dim, withmatches=False):
+    res=[]
+    for i in range(low,high):
+        res.append(match_template(preds, craters, i, index, dim, withmatches=withmatches))
+    return res
+
+def match_template(preds, craters, i, index, dim, withmatches=False):
+    pred = preds[i]
     img = 'img_{:05d}'.format(index + i)
     valid = False
     diam = "Diameter (pix)"
@@ -250,7 +257,7 @@ def extract_unique_craters(
     logger = logging.getLogger(__name__)
     # Load/generate model preds
     try:
-        preds = h5py.File(CP["dir_preds"], "r")[CP["datatype"]]
+        preds = h5py.File(CP["dir_preds"], "r")[CP["datatype"]][...]
         logger.info("Loaded model predictions successfully")
     except:
         logger.info("Couldnt load model predictions, generating")
@@ -282,12 +289,31 @@ def extract_unique_craters(
             img = 'img_{:05d}'.format(index + i)
             if img in craters:
                 full_craters[img] = craters[img]
-    res = Parallel(n_jobs=16, verbose=0)(
-        delayed(match_template)(
-            preds[i], full_craters, i, index, dim, withmatches=withmatches
-        )
-        for i in tqdm(range(start, stop))
-    )
+    
+    preds[preds >= cfg.target_thresh_] = 1
+    preds[preds < cfg.target_thresh_] = 0
+    
+    preds = preds.astype('uint8')
+    
+    folder = './joblib_memmap'
+    try:
+        os.mkdir(folder)
+    except FileExistsError:
+        pass
+    
+    #data_filename_memmap = os.path.join(folder, 'data_memmap')
+    #dump(preds, data_filename_memmap)
+    #preds = load(data_filename_memmap, mmap_mode='r')
+    
+ #   res = Parallel(n_jobs=16, verbose=0)(
+ #       delayed(match_template)(
+ #           preds, full_craters, i, index, dim, withmatches=withmatches
+ #       )
+ #       for i in tqdm(range(start, stop))
+ #   )
+
+ 
+    res = [match_template(preds, full_craters, i, index, dim, withmatches=withmatches) for i in tqdm(range(start, stop))]
 
     for i in range(start, stop):
         coords, df2 = res[i]

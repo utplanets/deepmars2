@@ -117,6 +117,8 @@ def fill_ortho_grid(lat_0, lon_0, box_size, img, dim=256):
     
     transformer = Transformer.from_pipeline(pipeline_str)
     
+    
+    
     platecarree_coords = np.asarray(
         transformer.transform(orthographic_coords[0], orthographic_coords[1])
     )
@@ -133,6 +135,96 @@ def fill_ortho_grid(lat_0, lon_0, box_size, img, dim=256):
     
     return ortho
 
+
+def get_ortho_grid(lat_0, lon_0, box_size, dim=256):
+    """Creates an orthographic projection from a plate caree projection.
+
+    Paramters
+    ---------
+    lat_0 : float
+        Central latitude of the image.
+    lon_0 : float
+        Central longitude of the image.
+    box_size : float
+        An abstract quantity measuring the size of the region being projected.
+        It is proportional to the absolute size of the box in km but scaled so
+        that at the equator, a box of size 1 denotes a box 1 degree across.
+    img : numpy.ndarray
+        The original image in plate carree coordinates to project from.
+    dim : int, optional
+        The width/height of the output image.  Only square outputs are
+        supported.
+    
+    Returns
+    -------
+    ortho : numpy.ndarray
+        The orthographic projection.
+    """
+    
+    deg_per_pix = box_size / dim
+    orthographic_coords = (np.indices((dim, dim)) - dim / 2) * deg_per_pix
+    
+    pipeline_str = (
+        'proj=pipeline '
+        'step proj=unitconvert xy_in=deg xy_out=rad '
+        'step proj=eqc '
+        'step proj=ortho inv lat_0={} lon_0={} '
+        'step proj=unitconvert xy_in=rad xy_out=deg'
+    ).format(lat_0, lon_0)
+    
+    transformer = Transformer.from_pipeline(pipeline_str)
+    
+    
+    
+    platecarree_coords = np.asarray(
+        transformer.transform(orthographic_coords[0], orthographic_coords[1])
+    )
+    return platecarree_coords
+
+
+def draw_ortho_grid(platecarree_coords, img1, img2, dim=256):
+    """Creates an orthographic projection from a plate caree projection.
+
+    Paramters
+    ---------
+    lat_0 : float
+        Central latitude of the image.
+    lon_0 : float
+        Central longitude of the image.
+    box_size : float
+        An abstract quantity measuring the size of the region being projected.
+        It is proportional to the absolute size of the box in km but scaled so
+        that at the equator, a box of size 1 denotes a box 1 degree across.
+    img : numpy.ndarray
+        The original image in plate carree coordinates to project from.
+    dim : int, optional
+        The width/height of the output image.  Only square outputs are
+        supported.
+    
+    Returns
+    -------
+    ortho : numpy.ndarray
+        The orthographic projection.
+    """
+    
+    input_imgs = []
+    for img in [img1, img2]:
+        pixel_coords = np.asarray(
+            [
+                (90 - platecarree_coords[1, :, :]) * (img.shape[0] / 180),
+                (platecarree_coords[0, :, :] - 180) * (img.shape[1] / 360),
+            ]
+        )
+    
+        pixel_coords = pixel_coords.astype(int)
+        input_imgs.append(
+            normalize(img[pixel_coords[0], pixel_coords[1]])
+            )
+
+    ortho = np.dstack(input_imgs).reshape((1,dim,dim,2))
+    
+    return ortho
+    #return pixel_coords
 
 def make_mask(craters, ring_size, dim=256):
     """Creates a target mask given a list of craters.
@@ -458,7 +550,9 @@ def gen_dataset(
     ring_size=1,
     in_notebook=False,
     min_lat=-90,
-    max_lat=90
+    max_lat=90,
+    min_long=-180,
+    max_long=180
 ):
     
     # Create HDF5 files
@@ -498,7 +592,7 @@ def gen_dataset(
     for i in tqdm_type(range(amount)):
         if mode=='random':
             lat = np.random.uniform(min_lat, max_lat)
-            lon = np.random.uniform(-180, 180)
+            lon = np.random.uniform(min_long, max_long)
             box_size = np.exp(np.random.uniform(np.log(min_box_size), np.log(max_box_size)))
 
         elif mode=='systematic':
@@ -563,23 +657,33 @@ def main():
     #craters = get_craters(cfg.crater_filename)
     # Load LROC Craters (5km - 20km)
     
-    cols = ['Long', 'Lat', 'Diameter (km)']
-    LROC = pd.read_csv('../data/raw/LROCCraters.csv')[cols].copy()
+    #cols = ['Long', 'Lat', 'Diameter (km)']
+    #LROC = pd.read_csv('../data/raw/LROCCraters.csv')[cols].copy()
     
     # Load Head Craters (20 km +)
     
-    Head = pd.read_csv('../data/raw/HeadCraters.csv')
-    Head.rename(columns={'Lon':'Long', 'Lat':'Lat', 'Diam_km':'Diameter (km)'}, inplace=True)
-    Head = Head[cols].copy()
+    #Head = pd.read_csv('../data/raw/HeadCraters.csv')
+    #Head.rename(columns={'Lon':'Long', 'Lat':'Lat', 'Diam_km':'Diameter (km)'}, inplace=True)
+    #Head = Head[cols].copy()
     
-    craters = pd.concat([LROC, Head])
-        
+    #craters = pd.concat([LROC, Head])
+     
+    # Moon Robbins
+    
+    cols = ['Long', 'Lat', 'Diameter (km)']
+    robbins_cols = ['LON_CIRC_IMG', 'LAT_CIRC_IMG', 'DIAM_CIRC_IMG']
+    Robbins = pd.read_csv('../data/raw/lunar_crater_database_robbins_2018.csv')[robbins_cols]
+    Robbins.rename(columns=dict((robbins_cols[i],cols[i]) for i in range(3)), inplace=True)
+    Robbins.loc[Robbins['Long'] > 180, 'Long'] -= 360
+    
+    craters = Robbins
+    
     print('Generating dataset', flush=True)
     
     for i in range(50):
         start_index = i * 1000
         print('\n{:05d}'.format(start_index), flush=True)
-        gen_dataset(DEM, IR, craters, 'ran_moon_hd', start_index, 'random', min_box_size=4.25, min_lat=-60, max_lat=60)
+        gen_dataset(DEM, IR, craters, 'ran_moon_hd_robbins', start_index, 'random', min_box_size=1.7, min_lat=-60, max_lat=60)
 
 
 if __name__=='__main__':

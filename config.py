@@ -32,8 +32,17 @@ R_planet = 1737.1
 
 # Best pre-trained models
 mars_DEM_model = root_dir + '/ResUNET/models/Tue Jun 18 17:26:59 2019/139-0.59.hdf5'
-moon_DEM_model = root_dir + '/ResUNET/models/Fri Jul 19 12:20:22 2019/51-0.60.hdf5'
+#moon_DEM_model = root_dir + '/ResUNET/models/Fri Jul 19 12:20:22 2019/51-0.60.hdf5'
 mars_IR_model = root_dir + '/ResUNET/models/Thu Jun 27 14:04:17 2019/78-0.65.hdf5'
-moon_IR_model = root_dir + '/ResUNET/models/Thu Jul 18 16:31:46 2019/108-0.62.hdf5'
+#moon_IR_model = root_dir + '/ResUNET/models/Thu Jul 18 16:31:46 2019/108-0.62.hdf5'
 mars_post_processing_model = root_dir + '/post_processing_net/models/Fri Jun 21 09:16:43 2019/61-0.899.hdf5'
-moon_post_processing_model = root_dir + '/post_processing_net/models/Fri Jul 19 10:32:53 2019/17-0.934.hdf5'
+#moon_post_processing_model = root_dir + '/post_processing_net/models/Fri Jul 19 10:32:53 2019/17-0.934.hdf5'
+
+# 59m/pix models
+#moon_DEM_model = root_dir + '/ResUNET/models/Sat Jul 27 13:15:40 2019/69-0.57.hdf5'
+#moon_IR_model = root_dir + '/ResUNET/models/Fri Jul 26 16:40:32 2019/46-0.63.hdf5'
+
+# 59m/pix Robbins trained
+moon_DEM_model = root_dir + '/ResUNET/models/Thu Aug  1 17:07:20 2019/77-0.76.hdf5'
+moon_IR_model = root_dir + '/ResUNET/models/Fri Aug  2 00:15:49 2019/32-0.81.hdf5'
+moon_post_processing_model = root_dir + '/post_processing_net/models/Wed Jul 31 13:36:45 2019/14-0.916.hdf5'

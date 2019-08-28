@@ -62,3 +62,52 @@ def match_template(image, template, pad_input=False):
             d1 = d0 + image_shape[i] - template.shape[i] + 1
         slices.append(slice(d0, d1))
     return response[tuple(slices)]
+
+@numba.jit
+def my_window_sum(A, ker_dim):
+    A = A[1:,1:]
+    A_dim = A.shape[0]
+    W_dim = A_dim - ker_dim
+    W_tmp = np.zeros((A_dim, W_dim))
+    W_tmp[:,0] = np.sum(A[:,:ker_dim], axis=1)
+    for i in range(1,W_dim):
+        W_tmp[:,i] = W_tmp[:,i-1] + A[:,i+ker_dim-1] - A[:,i-1]
+    W = np.zeros((W_dim, W_dim))
+    W[0,:] = np.sum(W_tmp[:ker_dim,:], axis=0)
+    for j in range(1,W_dim):
+        W[j,:] = W[j-1,:] + W_tmp[j+ker_dim-1,:] - W_tmp[j-1,:]
+
+    return W
+
+@numba.jit
+def my_match_template_2(img, ker, pad_input=False):
+    img_dim = img.shape[0]
+    ker_dim = ker.shape[0]
+    
+    pad_dim = img_dim + 2 * ker_dim
+    img_pad = np.zeros((pad_dim, pad_dim))
+    img_pad[ker_dim:-ker_dim,ker_dim:-ker_dim] = img
+    
+    img_ws = my_window_sum(img_pad, ker_dim)
+    img2_ws = my_window_sum(img_pad ** 2, ker_dim)
+
+    ker_mean = ker.mean()
+    ker_vol = ker_dim **2
+    ker_ssd = np.sum((ker - ker_mean) ** 2)
+
+    xcorr = conv(img_pad, ker[::-1, ::-1])[1:-1, 1:-1]
+    
+    numerator = xcorr - img_ws * ker_mean
+    denominator = img2_ws
+    img_ws = img_ws **2
+    img_ws = img_ws / ker_vol
+    denominator -= img_ws
+    denominator *= ker_ssd
+    denominator = np.maximum(denominator, np.finfo(np.float64).eps)
+    denominator = np.sqrt(denominator)
+    
+    response = numerator / denominator
+    
+    d0 = (ker_dim - 1) // 2
+    d1 = d0 + img_dim
+    return response[d0:d1,d0:d1]

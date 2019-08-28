@@ -1,6 +1,7 @@
 import numpy as np
 #from skimage.feature import match_template
-from deepmars2.features.improved_match_template import match_template
+#from deepmars2.features.improved_match_template import match_template as match_template
+from deepmars2.features.improved_match_template import my_match_template_2 as match_template
 import cv2
 import deepmars2.config as cfg
 
@@ -24,7 +25,7 @@ target_thresh : float
 """
 
 
-def template_match_t(target):
+def template_match_t(target_original):
     """Extracts crater coordinates (in pixels) from a CNN-predicted target by
     iteratively sliding rings through the image via match_template from
     scikit-image.
@@ -60,9 +61,12 @@ def template_match_t(target):
     rw = 2
 
     # threshold target
-    target[target >= cfg.target_thresh_] = 1
-    target[target < cfg.target_thresh_] = 0
-
+    #target = np.zeros_like(target_original, dtype='float32')
+    #target[target_original >= cfg.target_thresh_] = 1
+    #target[target_original < cfg.target_thresh_] = 0
+    
+    target = target_original.astype('float32')
+    
     radii = np.arange(cfg.minrad_, cfg.maxrad_ + 1, 1, dtype=int)
     coords = []     # coordinates extracted from template matching
     corr = []       # correlation coefficient for coordinates set
@@ -75,7 +79,7 @@ def template_match_t(target):
         # template match - result is nxn array of probabilities
         result = match_template(target[:,:,0], template, pad_input=True)
         index_r = np.where(result > cfg.template_thresh_)
-        coords_r = np.asarray(list(zip(*index_r)))
+        coords_r = np.dstack(index_r)[0]
         corr_r = np.asarray(result[index_r])
 
         # store x,y,r
