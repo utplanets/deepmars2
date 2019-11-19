@@ -16,12 +16,15 @@ import numpy as np
 from sklearn.ensemble import GradientBoostingClassifier
 import deepmars2.config as cfg
 import cratertools.metric as metric
+import sys
 
 
 cols = ['Long', 'Lat', 'Diameter (km)']
 
 
 # Customizable for individual dataset
+
+# Moon Robbins
 
 min_box_size = 1.7
 max_box_size = 30
@@ -37,13 +40,13 @@ t_ll2 = 0.5
 
 def load_DEM_IR():
     print('Loading DEM')
-    DEM = tifffile.imread('../data/raw/Lunar_LRO_LOLAKaguya_DEMmerge_60N60S_512ppd.tif')
+    DEM = tifffile.imread('./data/raw/Lunar_LRO_LOLAKaguya_DEMmerge_60N60S_512ppd.tif')
     padding = (DEM.shape[1] // 2 - DEM.shape[0]) // 2
     new_DEM = np.zeros((DEM.shape[1] // 2, DEM.shape[1]), dtype='int16')
     new_DEM[padding:padding + DEM.shape[0],:] = DEM
     
     print('Loading IR')
-    IR = tifffile.imread('../data/raw/Lunar_LRO_LOLAKaguya_Shade_60N60S_512ppd.tif')
+    IR = tifffile.imread('./data/raw/Lunar_LRO_LOLAKaguya_Shade_60N60S_512ppd.tif')
     padding = (IR.shape[1] // 2 - IR.shape[0]) // 2
     new_IR = np.zeros((IR.shape[1] // 2, IR.shape[1]), dtype='int16')
     new_IR[padding:padding + IR.shape[0],:] = IR
@@ -53,12 +56,41 @@ def load_DEM_IR():
 def load_craters():
     print('Loading Craters')
     robbins_cols = ['LON_CIRC_IMG', 'LAT_CIRC_IMG', 'DIAM_CIRC_IMG']
-    Robbins = pd.read_csv('../data/raw/lunar_crater_database_robbins_2018.csv')[robbins_cols]
+    Robbins = pd.read_csv('./data/raw/lunar_crater_database_robbins_2018.csv')[robbins_cols]
     Robbins.rename(columns=dict((robbins_cols[i], cols[i]) for i in range(3)), inplace=True)
     Robbins.loc[Robbins['Long'] > 180, 'Long'] -= 360
     
     return Robbins
 
+# Moon P&H
+#
+#min_box_size = 4
+#max_box_size = 30
+#n_box_sizes = 20
+#min_lat = -90
+#max_lat = 90
+#min_long = -180
+#max_long = 180
+#min_diam = 0
+#max_diam = np.inf
+#t_rad = 0.25
+#t_ll2 = 0.5
+
+
+#def load_DEM_IR():
+#    print('Loading DEM')
+#    DEM = tifffile.imread('./data/raw/Lunar_LRO_LOLA_Global_LDEM_118m_Mar2014.tif')
+#    print('Loading IR')
+#    IR = tifffile.imread('./data/raw/Lunar_LRO_LROC-WAC_Mosaic_global_100m_June2013.tif')
+#    return DEM, IR
+
+#def load_craters():
+#    LROC = pd.read_csv('./data/raw/LROCCraters.csv')[cols].copy()
+#    Head = pd.read_csv('./data/raw/HeadCraters.csv')
+#    Head.rename(columns={'Lon':'Long', 'Lat':'Lat', 'Diam_km':'Diameter (km)'}, inplace=True)
+#    
+#    return pd.concat([LROC, Head])
+    
 
 # helper functions
 
@@ -500,7 +532,6 @@ def UNET_predictions():
     
     box_sizes = np.exp(np.linspace(np.log(min_box_size), np.log(max_box_size), n_box_sizes))
     print('Box sizes: ', box_sizes.round(1))
-    min_lat, max_lat, min_long, max_long = -60, 60, -180, 180
     sys_pass = data.systematic_pass(box_sizes, min_lat=min_lat, max_lat=max_lat, min_long=min_long, max_long=max_long)
     n_files = len(sys_pass) // 1000 + 1
     empty_craters = pd.DataFrame(columns=['Long', 'Lat', 'Diameter (km)'])
@@ -509,8 +540,8 @@ def UNET_predictions():
 
     for i in range(n_files):
         start_index = i * 1000
-        do_IR = not os.path.isfile('../data/predictions3/IR/sys_moon_craterdist_{:05d}.npy'.format(start_index))
-        do_DEM = not os.path.isfile('../data/predictions3/DEM/sys_moon_craterdist_{:05d}.npy'.format(start_index))
+        do_IR = not os.path.isfile('./data/predictions3/IR/sys_moon_craterdist_{:05d}.npy'.format(start_index))
+        do_DEM = not os.path.isfile('./data/predictions3/DEM/sys_moon_craterdist_{:05d}.npy'.format(start_index))
     
         # Generate images
         if do_IR or do_DEM:
@@ -525,7 +556,6 @@ def UNET_predictions():
 def filtering():
     box_sizes = np.exp(np.linspace(np.log(min_box_size), np.log(max_box_size), n_box_sizes))
     print('Box sizes: ', box_sizes.round(1))
-    min_lat, max_lat, min_long, max_long = -60, 60, -180, 180
     sys_pass = data.systematic_pass(box_sizes, min_lat=min_lat, max_lat=max_lat, min_long=min_long, max_long=max_long)
     n_files = len(sys_pass) // 1000 + 1
     
@@ -535,7 +565,7 @@ def filtering():
     
     craters_np = np.empty([0,3])
     for i in tqdm(range(n_files)):
-        crater_file_name = '../data/predictions3/IR/sys_moon_craterdist_{:05d}.npy'.format(i * 1000)
+        crater_file_name = './data/predictions3/IR/sys_moon_craterdist_{:05d}.npy'.format(i * 1000)
         craters_np = np.vstack([craters_np, np.load(crater_file_name)])
     craters_np[:,2] *= 2 # convert radii to diameters
     my_craters_IR = pd.DataFrame(craters_np, columns=cols)
@@ -544,7 +574,7 @@ def filtering():
     
     craters_np = np.empty([0,3])
     for i in tqdm(range(n_files)):
-        crater_file_name = '../data/predictions3/DEM/sys_moon_craterdist_{:05d}.npy'.format(i * 1000)
+        crater_file_name = './data/predictions3/DEM/sys_moon_craterdist_{:05d}.npy'.format(i * 1000)
         craters_np = np.vstack([craters_np, np.load(crater_file_name)])
     craters_np[:,2] *= 2 # convert radii to diameters
     my_craters_DEM = pd.DataFrame(craters_np, columns=cols)
@@ -632,7 +662,7 @@ def filtering():
 def post_processing_predictions():
     # Load craters
     
-    avg_combined_filtered = pd.read_csv('./craters_with_IR_DEM_dup.csv')
+    avg_combined_filtered = pd.read_csv('./all_in_one_with_IR_DEM_dup.csv')
     
     # Load post-processing model
     
@@ -687,3 +717,21 @@ def final_selection():
     # Compare against ground truth
     
     metrics(GT_craters_filtered, final_predictions, return_value=False)
+
+if __name__ == '__main__':
+    arg = sys.argv[1]
+    if arg == 'data_generation':
+        data_generation()
+    elif arg == 'train_post_processing_net':
+        train_post_processing_net()
+    elif arg == 'UNET_predictions':
+        UNET_predictions()
+    elif arg == 'filtering':
+        filtering()
+    elif arg == 'post_processing_predictions':
+        post_processing_predictions()
+    elif arg == 'final_selection':
+        final_selection()
+    else:
+        print('Invalid Argument: ', arg)
+    
