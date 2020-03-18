@@ -122,16 +122,18 @@ def fill_ortho_grid(lat_0, lon_0, box_size, img, dim=256):
     platecarree_coords = np.asarray(
         transformer.transform(orthographic_coords[0], orthographic_coords[1])
     )
-    
+
     pixel_coords = np.asarray(
         [
             (90 - platecarree_coords[1, :, :]) * (img.shape[0] / 180),
-            (platecarree_coords[0, :, :] - 180) * (img.shape[1] / 360),
+            (platecarree_coords[0, :, :] - 180) * (img.shape[1] / 360), #CL This forces a negative index, which is weird.
         ]
     )
     
     pixel_coords = pixel_coords.astype(int)
     ortho = img[pixel_coords[0], pixel_coords[1]]
+#    print(lon_0, lat_0, box_size)
+#    print(pixel_coords[1].min(), pixel_coords[1].max(),pixel_coords[0].min(),pixel_coords[0].max())
     
     return ortho
 
@@ -524,13 +526,17 @@ def make_images(craters, lat, lon, box_size, dim, DEM, IR, ring_size):
     craters_in_img = get_craters_in_img(craters, lat, lon, box_size, dim=dim)
     
     ortho_mask = make_mask(craters_in_img, ring_size, dim=dim)
-    ortho_DEM = fill_ortho_grid(lat, lon, box_size, DEM)
-    ortho_IR = fill_ortho_grid(lat, lon, box_size, IR)
-
     ortho_mask = normalize(ortho_mask)
-    ortho_DEM = normalize(ortho_DEM)
+
+    ortho_IR = fill_ortho_grid(lat, lon, box_size, IR)
     ortho_IR = normalize(ortho_IR)
     
+    if DEM is not None:
+        ortho_DEM = fill_ortho_grid(lat, lon, box_size, DEM)
+        ortho_DEM = normalize(ortho_DEM)
+    else:
+        ortho_DEM = ortho_IR*0
+
     return ortho_DEM, ortho_IR, ortho_mask, craters_in_img
         
 
@@ -611,7 +617,7 @@ def gen_dataset(
         
         else:
             raise ValueError('Mode must be either random or systematic')
-            
+#        print(lat, lon, box_size)
         ortho_DEM, ortho_IR, ortho_mask, craters_xy = make_images(craters, lat,
                                                                   lon,
                                                                   box_size,
